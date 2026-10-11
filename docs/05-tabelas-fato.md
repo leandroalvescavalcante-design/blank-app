@@ -142,10 +142,17 @@ Recusa de linhas dentro da remessa não é medida aqui: aparece como devolução
 | Tipo | Colunas |
 |---|---|
 | Dimensões | `data_sk`, `sku_sk`, `lote_sk`, `local_sk` |
+| Instante | `instante_extracao` |
 | Medidas | `qtd_fisica` SA · `qtd_bloqueada` SA · `qtd_reservada` SA · `custo_unit_medio` NA · `valor` SA · `dif_reconciliacao` SA |
 
-**Ponto crítico [I]:** a reconciliação (K04) só tem sentido se F03 vier **de uma fonte independente** de F02, como a posição de estoque do ERP. Se o saldo for calculado somando F02, a diferença é zero por construção e o indicador mente.
+**Ponto crítico [I]:** a reconciliação (K04) só tem sentido se F03 vier **de uma fonte independente** de F02. Se o saldo for calculado somando F02, a diferença é zero por construção e o indicador mente.
 **[D]** Quando o tenant não tiver fonte de saldo independente, F03 é gerado de F02 com procedência `derivado`, e K04 aparece como **"não verificável"**, nunca como zero.
+
+**Revisão após informação do usuário:** a maioria dos ERPs exporta o relatório de saldo por SKU e o extrato (kardex) por SKU. Isso resolve a existência da fonte, mas muda o que K04 mede:
+- **[I]** No ERP, o relatório de saldo costuma ser calculado a partir da mesma tabela de movimentos do extrato. Os dois não são independentes **entre si**; são independentes **da nossa carga**.
+- Portanto K04 mede a **integridade da carga contra o ERP**: movimento que não veio, arquivo cortado, corte de data diferente, lançamento retroativo. **Não** mede erro operacional (ERP × realidade física). Esse só a contagem (K01/K02) mede.
+- **Lançamento retroativo:** um movimento lançado hoje com data de ontem muda o saldo de ontem. **[D]** F03 grava o `instante_extracao`; a reconciliação compara saldo e movimentos **do mesmo corte de extração**, e a diferença entre duas extrações do mesmo dia vira o indicador "retroativo" (alerta de fechamento, D18).
+- **Grão da reconciliação:** **[I]** o relatório de saldo do ERP costuma vir por SKU × depósito, não por lote × endereço (isso é WMS). A reconciliação roda no **grão comum mais grosso** entre as duas fontes; abaixo dele, K04 é "não verificável".
 
 ### F06a `fato_programacao_op`
 | Tipo | Colunas |
@@ -198,7 +205,7 @@ Recusa de linhas dentro da remessa não é medida aqui: aparece como devolução
 
 ## 8. O que não sei
 
-1. **Se a fonte de saldo independente existe na maioria dos tenants.** Se não existir, a frente 1 perde seu principal controle de integridade (K04) e passa a depender só da contagem. Para descobrir: verificar nos ERPs dos arquétipos se há relatório de posição de estoque exportável separado do extrato de movimentos.
+1. **~~Se a fonte de saldo existe~~ — respondido pelo usuário:** existe na maioria dos ERPs (relatório de saldo + extrato por SKU). Restam: (a) o grão do relatório de saldo (SKU × depósito ou lote × endereço); (b) se o extrato sai em lote para todos os SKUs de um período ou só um SKU por vez. Se for um por vez, a carga manual fica inviável e o produto precisa de integração ou de outro relatório de movimentos.
 2. **Data da demanda (desejada × evento):** a escolha correta depende da distribuição da antecedência dos pedidos, que só vem do real.
 
 ## 9. Recalcular com dado real
