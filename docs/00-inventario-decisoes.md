@@ -62,7 +62,7 @@ Freq.: D = diária · S = semanal · M = mensal · T = trimestral · A = anual �
 | D17 | Realocar volume entre transportadoras / fornecedores | Gerente de logística / Compras | M | Participação de volume | A, B, C | OTIF por parceiro, custo | Núcleo · onda 2 |
 | D18 | Fechamento mensal: valor do estoque, perdas, aprovação de baixas | Controller / CFO | M | Provisão e aprovação de baixa | A, B, C | Saldo valorizado, perdas por motivo (vencimento, avaria, ajuste) | Núcleo (consome a onda 1) |
 | D19 | Reduzir cobertura de quais SKUs (capital de giro) | CFO | M | Meta de cobertura por classe | A, B, C | Cobertura em dias, valor parado, giro | Núcleo · onda 2 |
-| D20 | Custo de servir por cliente / rota | CFO + Comercial | T | Pedido mínimo, frequência, frete | A, B | Custo de transporte rateado, volume, devoluções | Extensão |
+| D20 | Custo de servir por cliente / rota | CFO + Comercial | T | Pedido mínimo, frequência, frete | A, B | Custo de transporte rateado, volume, devoluções | Núcleo · onda 2 |
 | D21 | Investir em capacidade do gargalo | CEO / CFO | A / Ev | Capex | A, C | Utilização do gargalo, throughput perdido | Núcleo · onda 2 |
 
 ### Fora do escopo (R3)
