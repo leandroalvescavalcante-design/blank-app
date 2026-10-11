@@ -41,7 +41,7 @@ Se a conta não fechar, o problema está na carga, não na operação. **[I]** �
 | P01 Recebimento | X | X | X | X | X | – | X | – | – | X | X | X |
 | P02 Movimento (razão) | X | X | X | X | X | ○ | ○ | ○ | – | X | X | X |
 | P03 Saldo diário | X | X | X | X | X | – | ○ | – | – | – | – | X |
-| P04 Contagem | X | X | X | X | X | – | – | – | – | X | X | X |
+| P04 Contagem | X | X | X | X | X | – | – | – | – | X | ○ | X |
 | P05 Pedido de compra | X | X | X | – | X | – | X | – | – | – | X | X |
 | P06 Ordem de produção | X | X | X | X | X | – | – | X | – | ○ | X | X |
 | P07 Pedido de venda | X | X | X | – | X | X | – | – | – | – | X | X |
@@ -52,6 +52,7 @@ Se a conta não fechar, o problema está na carga, não na operação. **[I]** �
 
 Notas de linha:
 - **P02 ○ Cliente/Fornecedor/Recurso:** o movimento referencia o documento de origem (degenerado: nº NF, nº OP, nº recebimento). Cliente, fornecedor e recurso são alcançados pelo fato de origem, não repetidos no razão.
+- **P04 ○ Motivo:** (revisado na Etapa 5) a causa da divergência entra no ajuste em P02, ligado pelo nº da contagem.
 - **P06 ○ Colaborador:** nenhuma decisão da onda 1 precisa saber quem apontou (R4). Entra na onda 2 com D12 (manutenção).
 - **P09 ○ Lote:** o lote expedido é definido na separação (P08). **[I]** A NF-e só traz lote em alguns setores; não dá para depender dela.
 - **P10 Fornecedor:** papel *transportadora* (ver §3).
