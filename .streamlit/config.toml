@@ -1,0 +1,3 @@
+[theme]
+# Vermelho é cor de status (crítico) na paleta do painel; a cor de destaque da interface é o azul da série 1.
+primaryColor = "#2a78d6"

@@ -16,14 +16,19 @@ sintético incluído valida só a mecânica.
 | 5 — Tabelas fato | [docs/05-tabelas-fato.md](docs/05-tabelas-fato.md) |
 | 6 — Camada semântica | [docs/06-camada-semantica.md](docs/06-camada-semantica.md) · [semantica/metricas.yaml](semantica/metricas.yaml) |
 | 7 — Telas de entrada | [docs/07-telas-entrada.md](docs/07-telas-entrada.md) · [entrada/layouts.yaml](entrada/layouts.yaml) |
+| 8 — Painel e fechamento | [docs/08-painel-e-fechamento.md](docs/08-painel-e-fechamento.md) — inclui como trocar o fictício pelo real |
 
 ## Rodar
 
 ```
 pip install -r requirements-dev.txt
+python -m app.admin carregar-simulacao --usuario SEU_NOME     # cenário sintético de 8 semanas (opcional)
 streamlit run streamlit_app.py
-python -m pytest tests
-python semantica/validar.py
+python -m pytest tests                                         # 64 testes de mecânica
+python semantica/validar.py                                    # consistência da camada semântica
+python -m app.admin limpar-sinteticos --usuario SEU_NOME --confirmar   # antes de carregar dado real
 ```
+
+![Painel](docs/painel.png)
 
 O banco local fica em `dados/gestao.duckdb` (fora do git). Para outro caminho: variável `GESTAO_DB`.

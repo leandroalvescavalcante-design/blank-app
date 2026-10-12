@@ -69,7 +69,7 @@ def pagina_painel(con_fn):
     site = f2.selectbox("Site", ["(todos)"] + sites)
     familia = f3.selectbox("Família", ["(todas)"] + familias)
     cliente = f4.selectbox("Cliente", ["(todos)"] + clientes)
-    areas = f5.multiselect("Área (filtro)", list(AREAS), default=list(AREAS))
+    areas = f5.pills("Área (filtro)", list(AREAS), selection_mode="multi", default=list(AREAS)) or []
     if not isinstance(periodo, tuple) or len(periodo) != 2:
         st.caption("Escolha início e fim do período.")
         return

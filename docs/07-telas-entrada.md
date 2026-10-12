@@ -1,7 +1,7 @@
 # Etapa 7 — Telas de Entrada (onda 1, frente 1)
 
 **Entrada:** Etapas 0–6 aprovadas; stack aprovada para o protótipo: **Streamlit + DuckDB** (migração para PostgreSQL quando houver multiempresa real).
-**Status:** construída e testada, aguardando validação.
+**Status:** construída e testada. Atualizações posteriores em [08-painel-e-fechamento.md](08-painel-e-fechamento.md).
 
 Legenda: **[F]** fato · **[I]** inferência · **[E]** especulação · **[D]** decisão de projeto · **[P]** valor que só vem do real.
 
@@ -50,12 +50,12 @@ arquivo / formulário
 | Item | Consequência | Quando resolver |
 |---|---|---|
 | Histórico de versão (T2) nas dimensões | Fator de conversão e atributos de SKU valem pela versão atual; o histórico da Etapa 4 não está implementado | Antes de K18 (ocupação), que depende de fator histórico |
-| Tolerância de contagem | Considerada **zero**: qualquer diferença vira divergência pendente **[P]** | Com a política do tenant (parâmetro `parametro_sku_local`) |
+| ~~Tolerância de contagem~~ | **Resolvido na Etapa 8:** parâmetro do SKU; padrão por classe ABC (A 0%, B 2%, C 5%) por benchmark. A lista de divergências pendentes ainda usa tolerância zero (toda diferença é investigada) | — |
 | Multiempresa e login | Uma empresa (`DEMO`); o usuário é digitado na barra lateral, sem autenticação | Migração para PostgreSQL |
 | Reconstrução total a cada carga | Correto e simples; em volume real fica lento (hoje ≈ 1–2 s por carga no teste) **[I]** | Quando o volume real mostrar o gargalo: reconstrução incremental por fato |
 | Confiabilidade de formulário | Fica MÉDIA: um campo web não distingue leitura de código de digitação | Integração com leitor/coletor |
 | Exclusão no ERP | Movimento apagado no ERP (sem estorno) não é detectado pela ausência no extrato seguinte | Se o ERP apagar em vez de estornar; detectável por cobertura de período do extrato |
-| Frentes 2 e 3 | Layouts especificados, sem carga para o fato | Após validar a frente 1 com dado real (WIP ≤ 3) |
+| ~~Frentes 2 e 3~~ | **Resolvido na Etapa 8** (autorização para concluir a ferramenta antes do dado real) | — |
 
 ## 4. Posição contrária mais forte
 
