@@ -1,0 +1,388 @@
+# Camada semântica — fonte única de definição das métricas (onda 1).
+# Em conflito com docs/02-kpis-formulas.md, ESTE arquivo vence; o doc guarda a justificativa.
+# Regras globais (R1..R10) estão em docs/06-camada-semantica.md.
+
+versao_camada: 2
+
+convencoes:
+  quantidade: unidade base do SKU
+  moeda: moeda única do tenant
+  sinal: "+1 para tipo_registro normal/correcao; -1 para estorno. Contagens usam soma de sinal, nunca count(*)"
+  nulo: "resultado indisponível é NULO com motivo, nunca zero"
+
+# --------------------------------------------------------------------------
+# Funções compartilhadas: regra definida uma vez, usada por várias métricas.
+# --------------------------------------------------------------------------
+funcoes:
+  dia_operacional:
+    entrada: [instante, site]
+    saida: data
+    regra: "data do instante deslocada pelo horario_corte do site (dim_calendario_operacional, T2)"
+  validade_minima:
+    entrada: [cliente, sku, data]
+    saida: dias
+    regra: "acordo_cliente_sku.dias > dim_cliente.validade_minima > dim_sku.validade_minima_padrao (versões vigentes na data)"
+  validade_minima_sku_local:
+    entrada: [sku, local, data]
+    saida: dias
+    regra: "máximo de validade_minima entre clientes que pediram o SKU no local na janela_clientes_ativos"
+    parametros: [janela_clientes_ativos]   # [P] provisório
+  tolerancia_contagem:
+    entrada: [sku, local, data]
+    saida: un_base
+    regra: "parametro_sku_local.tolerancia_contagem vigente na data"
+  converter:
+    entrada: [qtd_base, sku, unidade, data]
+    saida: qtd_na_unidade
+    regra: "qtd_base / sku_unidade.fator_para_base (versão vigente na data)"
+  peso_kg:
+    entrada: [qtd_base, sku, data]
+    saida: kg
+    regra: "qtd_base * dim_sku.peso_bruto_un_base (versão vigente na data)"
+  regra_otif:
+    entrada: [empresa, data]
+    saida: [janela, tolerancia, versao]
+    regra: "dim_empresa.regra_otif vigente na data"
+
+# --------------------------------------------------------------------------
+# Medidas base: ligação direta com colunas de fato. Métricas só usam estas.
+# agregacao: soma | ultimo_no_periodo (semiaditiva) | nenhuma
+# --------------------------------------------------------------------------
+medidas_base:
+  qtd_movimento:        {fato: F02, expr: "qtd", agregacao: soma, unidade: un_base}
+  valor_movimento:      {fato: F02, expr: "valor", agregacao: soma, unidade: moeda}
+  valor_ajuste_abs:     {fato: F02, expr: "abs(valor)", filtro: "tipo_movimento in (ajuste+, ajuste-)", agregacao: soma, unidade: moeda}
+  valor_ajuste:         {fato: F02, expr: "valor", filtro: "tipo_movimento in (ajuste+, ajuste-)", agregacao: soma, unidade: moeda}
+  valor_baixa_abs:      {fato: F02, expr: "abs(valor)", filtro: "tipo_movimento = baixa", agregacao: soma, unidade: moeda}
+  valor_saidas_abs:     {fato: F02, expr: "abs(valor)", filtro: "tipo_movimento.sinal_esperado = -1 and tipo_movimento != transferencia", agregacao: soma, unidade: moeda}
+
+  saldo_fisico:         {fato: F03, expr: "qtd_fisica", agregacao: ultimo_no_periodo, unidade: un_base}
+  saldo_disponivel:     {fato: F03, expr: "qtd_fisica - qtd_bloqueada - qtd_reservada", filtro: "local.tipo != quarentena", agregacao: ultimo_no_periodo, unidade: un_base}
+  valor_estoque:        {fato: F03, expr: "valor", agregacao: ultimo_no_periodo, unidade: moeda}
+  combinacoes_dif_rec:  {fato: F03, expr: "sinal * (dif_reconciliacao != 0)", filtro: "grao_reconciliavel = 1", agregacao: soma, unidade: contagem}
+
+  posicoes_contadas:    {fato: F04, expr: "sinal", filtro: "e_final = 1", agregacao: soma, unidade: contagem}
+  acertos_contagem:     {fato: F04, expr: "sinal * (abs(qtd_contada - qtd_sistema_congelada) <= tolerancia_contagem(sku, local, data))", filtro: "e_final = 1", agregacao: soma, unidade: contagem}
+
+  qtd_programada_cong:  {fato: F06a, expr: "qtd_programada", filtro: "congelada = 1", agregacao: soma, unidade: un_base}
+  min_programados:      {fato: F06a, expr: "qtd_programada * tempo_padrao_min_un + setup_min", filtro: "congelada = 1", agregacao: soma, unidade: minutos}
+  min_disponiveis:      {fato: calendario_recurso, expr: "horas * 60", agregacao: soma, unidade: minutos}
+  qtd_boa:              {fato: F06b, expr: "qtd_boa", agregacao: soma, unidade: un_base}
+
+  demanda_qtd:          {fato: F07, expr: "delta_qtd", data_padrao: data_desejada, agregacao: soma, unidade: un_base}
+
+  lead_time_pond:       {fato: F01, expr: "qtd_recebida * (data_recebimento - F05.data_emissao)", agregacao: soma, unidade: un_base_x_dias}
+  qtd_recebida:         {fato: F01, expr: "qtd_recebida", agregacao: soma, unidade: un_base}
+
+  # F11 está no grão linha × remessa; OTIF é por LINHA DE PEDIDO: a linha só é OK se todas as suas remessas
+  # não canceladas pelo cliente forem OK (remessa 'cortada' tem otif = 0 e reprova a linha).
+  linhas_devidas:       {fato: F11, expr: "count distinct (pedido, item)", filtro: "status_final != cancelada_cliente and data_prometida <= fim_periodo", agregacao: soma, unidade: contagem}
+  linhas_otif:          {fato: F11, expr: "count distinct (pedido, item) having min(otif) = 1", filtro: "status_final != cancelada_cliente and data_prometida <= fim_periodo", agregacao: soma, unidade: contagem}
+  qtd_alocada:          {fato: F11, expr: "qtd_alocada", filtro: "status_final != cancelada_cliente", agregacao: soma, unidade: un_base}
+  qtd_entregue:         {fato: F11, expr: "qtd_entregue", agregacao: soma, unidade: un_base}
+  kg_entregues:         {fato: F11, expr: "peso_kg(qtd_entregue, sku, data_entrega)", agregacao: soma, unidade: kg}
+
+  peso_viagem:          {fato: F10a, expr: "peso_kg", agregacao: soma, unidade: kg}
+  volume_viagem:        {fato: F10a, expr: "volume_m3", agregacao: soma, unidade: m3}
+  custo_viagem:         {fato: F10a, expr: "custo_viagem", agregacao: soma, unidade: moeda}
+
+# --------------------------------------------------------------------------
+# Métricas. classe: decisao | diagnostico | integridade
+# direcao: maior_melhor | menor_melhor | alvo_zero | gatilho
+# --------------------------------------------------------------------------
+metricas:
+
+  K01:
+    nome: Acuracidade de inventário por posição
+    classe: diagnostico
+    formula: "acertos_contagem / posicoes_contadas  (tolerância: parâmetro do SKU; padrão por ABC A 0%, B 2%, C 5%)"
+    usa: [acertos_contagem, posicoes_contadas, tolerancia_contagem]
+    unidade: "%"
+    data_padrao: data_contagem
+    dimensoes: [data, sku, lote, local, colaborador, procedencia]
+    dono: Líder de armazém
+    decisoes: [D07, D04]
+    direcao: maior_melhor
+    meta: proibida   # antipadrão: acuracidade como meta direta
+    nulo_quando: "posicoes_contadas = 0 → 'sem contagem no período'"
+
+  K02:
+    nome: Divergência valorizada por etapa de origem
+    classe: diagnostico
+    formula: "valor_ajuste_abs agrupado por motivo.etapa_origem"
+    usa: [valor_ajuste_abs]
+    unidade: moeda
+    data_padrao: data_movimento
+    dimensoes: [data, sku, local, motivo, procedencia]
+    dono: Supervisor de armazém
+    decisoes: [D08]
+    direcao: menor_melhor
+    meta: proibida
+
+  K02b:
+    nome: Participação de divergência com origem desconhecida
+    classe: diagnostico
+    formula: "valor_ajuste_abs[motivo.etapa_origem = desconhecida] / valor_ajuste_abs"
+    usa: [valor_ajuste_abs]
+    unidade: "%"
+    data_padrao: data_movimento
+    dimensoes: [data, sku, local, procedencia]
+    dono: Supervisor de armazém
+    decisoes: [D08]
+    direcao: gatilho
+    gatilho: "> limiar_k02b → investigação não está sendo feita / lista de motivos incompleta"
+    parametros: [limiar_k02b]
+
+  K03:
+    nome: Ajuste bruto e líquido
+    classe: diagnostico
+    formula: "bruto = valor_ajuste_abs; liquido = valor_ajuste"
+    usa: [valor_ajuste_abs, valor_ajuste]
+    unidade: moeda
+    data_padrao: data_movimento
+    dimensoes: [data, sku, local, motivo, procedencia]
+    dono: Controller
+    decisoes: [D08, D18]
+    direcao: menor_melhor
+    meta: proibida
+
+  K04:
+    nome: Exceções de reconciliação do razão
+    classe: integridade
+    formula: "combinacoes_dif_rec"
+    usa: [combinacoes_dif_rec]
+    unidade: contagem
+    data_padrao: data_saldo
+    dimensoes: [data, sku, local, procedencia]
+    dono: Engenharia de dados
+    decisoes: [D04, D05, D06, D15, D18]
+    direcao: alvo_zero
+    nulo_quando: "saldo sem fonte independente ou abaixo do grão reconciliável → 'não verificável'"
+    aviso_exibicao: "Mede integridade da carga contra o ERP; NÃO mede acuracidade física (ver K01)."
+
+  K05:
+    nome: Quantidade em risco de vencimento (FEFO)
+    classe: decisao
+    grao_calculo: "sku × local × dia, lotes ordenados por validade"
+    formula: |
+      t_i = validade_i - validade_minima_sku_local(sku, local, dia) - transito - dia
+      consumivel_i = min(saldo_fisico_i, max(0, d * t_i - soma_{j<i} consumivel_j))
+      risco_i = saldo_fisico_i - consumivel_i
+    usa: [saldo_fisico, validade_minima_sku_local, F12.d]
+    unidade: un_base
+    agregado: {unidade: moeda, leitura: "R$ em risco no último dia (entre SKUs só soma em moeda — R7)"}
+    data_padrao: data_saldo
+    dimensoes: [data, sku, lote, site, procedencia]
+    dono: Analista de estoque
+    decisoes: [D06]
+    direcao: gatilho
+    gatilho: "risco_i > 0"
+    provisorio_se: "F12.provisorio = 1"
+
+  K06:
+    nome: Perdas por motivo
+    classe: decisao
+    formula: "valor_baixa_abs agrupado por motivo.categoria_perda; K06pct = valor_baixa_abs / valor_saidas_abs"
+    usa: [valor_baixa_abs, valor_saidas_abs]
+    unidade: moeda
+    data_padrao: data_movimento
+    dimensoes: [data, sku, lote, local, motivo, procedencia]
+    dono: Controller
+    decisoes: [D18, D06]
+    direcao: menor_melhor
+
+  K07:
+    nome: Cobertura
+    classe: decisao
+    formula: "saldo_disponivel / F12.d"
+    usa: [saldo_disponivel, F12.d]
+    unidade: dias
+    agregado: {unidade: dias, leitura: "razão em valor: Σ saldo×custo / Σ demanda×custo (R7)"}
+    data_padrao: data_saldo
+    dimensoes: [data, sku, site, procedencia]
+    dono: Analista de estoque
+    decisoes: [D05, D19]
+    direcao: gatilho
+    nulo_quando: "F12.d = 0 → 'sem demanda'"
+    provisorio_se: "F12.provisorio = 1"
+
+  K08:
+    nome: Valor do estoque
+    classe: decisao
+    formula: "valor_estoque"
+    usa: [valor_estoque]
+    unidade: moeda
+    data_padrao: data_saldo
+    dimensoes: [data, sku, lote, local, procedencia]
+    dono: Controller
+    decisoes: [D18]
+    direcao: menor_melhor
+
+  K09:
+    nome: Estoque de segurança e ponto de pedido
+    classe: decisao
+    grao_calculo: "sku × local × dia (materializado em F12)"
+    formula: |
+      ss  = z * sqrt(L * sigma_d^2 + d^2 * sigma_L^2)
+      rop = d * L + ss
+    usa: [demanda_qtd, lead_time_pond, qtd_recebida, K01]
+    unidade: un_base
+    agregado: {unidade: "%", leitura: "% dos SKUs com ponto de pedido calculável (os demais: nulo com motivo)"}
+    data_padrao: data
+    dimensoes: [data, sku, site]
+    dono: Analista de estoque
+    decisoes: [D04]
+    direcao: gatilho
+    nulo_quando: "apto_reposicao = 0 → 'acuracidade desconhecida'"
+    provisorio_se: "sintetico ou n_obs_demanda < n_min ou n_obs_lead_time < n_min"
+    parametros: [z, n_min, metodo_ss]
+
+  K10:
+    nome: Lote com teto de vida útil
+    classe: decisao
+    grao_calculo: "sku × local × dia (materializado em F12)"
+    formula: |
+      q_eoq    = sqrt(2 * D * S / H)
+      q_palete = ceil(q_eoq / un_palete) * un_palete
+      cob_max  = shelf_life - validade_minima_sku_local - transito - dias_parados
+      teto     = floor(d * cob_max / un_palete) * un_palete
+      q        = min(q_palete, teto)          # teto ignorado se shelf_life nulo
+      alerta   = teto < lote_minimo or teto = 0
+    usa: [demanda_qtd, converter, validade_minima_sku_local]
+    unidade: un_base
+    agregado: {unidade: contagem, leitura: "SKUs com lote inviável no último dia"}
+    data_padrao: data
+    dimensoes: [data, sku, site]
+    dono: PPCP / Compras
+    decisoes: [D03]
+    direcao: gatilho
+    gatilho: "alerta = 1 → item inviável no regime atual"
+    provisorio_se: "sintetico ou S/H não calibrados"
+    parametros: [S, H, dias_parados, transito]
+
+  K11:
+    nome: Carga do recurso restritivo
+    classe: decisao
+    formula: "min_programados / min_disponiveis"
+    usa: [min_programados, min_disponiveis]
+    unidade: "%"
+    data_padrao: data_turno
+    dimensoes: [data, turno, recurso]
+    dono: Programador PPCP
+    decisoes: [D01]
+    direcao: gatilho
+    gatilho: "> 100% → resequenciar ou reter OP"
+    provisorio_se: "tempo padrão ou setup não calibrados"
+
+  K12:
+    nome: Aderência ao programa
+    classe: diagnostico
+    grao_calculo: "OP × dia: min(qtd_boa, qtd_programada_cong); depois soma"
+    formula: "soma(min(qtd_boa, qtd_programada_cong)) / soma(qtd_programada_cong)"
+    usa: [qtd_boa, qtd_programada_cong]
+    unidade: "%"
+    data_padrao: data_turno
+    dimensoes: [data, turno, recurso, sku]
+    dono: Gerente PPCP
+    decisoes: [D01]
+    direcao: maior_melhor
+
+  K13:
+    nome: Lead time realizado de fornecedor
+    classe: diagnostico
+    formula: "lead_time_pond / qtd_recebida  (média ponderada); sigma_L na janela móvel"
+    usa: [lead_time_pond, qtd_recebida]
+    unidade: dias
+    data_padrao: data_recebimento
+    dimensoes: [data, sku, parceiro, procedencia]
+    dono: Comprador
+    decisoes: [D04, D05]
+    direcao: menor_melhor
+    parametros: [janela_lead_time]
+
+  K14:
+    nome: Dias até ruptura projetada
+    classe: decisao
+    grao_calculo: "sku × local × dia (materializado em F12)"
+    formula: |
+      demanda(τ) = max(comprometida(τ), d)
+      posicao(t) = saldo_disponivel + soma_{τ<=t} entradas_previstas(τ) - soma_{τ<=t} demanda(τ)
+      K14 = menor t com posicao(t) < ss
+    usa: [saldo_disponivel, demanda_qtd, K09]
+    unidade: dias
+    agregado: {unidade: contagem, leitura: "SKUs com ruptura projetada antes do lead time"}
+    data_padrao: data
+    dimensoes: [data, sku, site]
+    dono: Comprador
+    decisoes: [D05]
+    direcao: gatilho
+    gatilho: "K14 < L → emitir/antecipar PC"
+    provisorio_se: "F12.provisorio = 1"
+
+  K15:
+    nome: OTIF por linha
+    classe: decisao
+    formula: "linhas_otif / linhas_devidas"
+    usa: [linhas_otif, linhas_devidas, regra_otif]
+    unidade: "%"
+    data_padrao: data_prometida
+    dimensoes: [data, cliente, sku, site, procedencia]
+    dono: Gerente de logística
+    decisoes: [D14, D15]
+    direcao: maior_melhor
+    comparavel_entre_tenants_se: "regra_otif.versao idêntica"
+
+  K16:
+    nome: Fill rate
+    classe: decisao
+    formula: "qtd_entregue / qtd_alocada; corte(motivo) = qtd_alocada - qtd_entregue"
+    usa: [qtd_entregue, qtd_alocada]
+    unidade: "%"
+    data_padrao: data_prometida
+    dimensoes: [data, cliente, sku, site, motivo, procedencia]
+    dono: Líder de expedição
+    decisoes: [D15]
+    direcao: maior_melhor
+
+  K17:
+    nome: Tempo de ciclo por etapa
+    classe: diagnostico
+    grao_calculo: "linha de pedido × remessa; percentis recalculados a cada nível de drill"
+    formula: "mediana e P90 de (instante_fim_etapa - instante_inicio_etapa); média só para checagem de Little"
+    usa: [F11.instantes]
+    unidade: horas
+    agregado: {unidade: horas, leitura: "mediana do ciclo total pedido→entrega; P90 ao lado; drill por etapa"}
+    data_padrao: data_entrega
+    dimensoes: [data, cliente, sku, site, veiculo, procedencia]
+    dono: Gerente de logística
+    decisoes: [D14, D15]
+    direcao: menor_melhor
+    aviso_exibicao: "Marco 'carregamento' pode ser estimado (saída da viagem); ver procedência."
+
+  K18:
+    nome: Ocupação do veículo
+    classe: decisao
+    grao_calculo: "viagem: max(peso/cap_kg, volume/cap_m3); acima da viagem, média simples entre viagens (exceção à R4: kg e m³ não somam)"
+    formula: "max(peso_viagem / veiculo.cap_kg, volume_viagem / veiculo.cap_m3)"
+    usa: [peso_viagem, volume_viagem]
+    unidade: "%"
+    data_padrao: data_viagem
+    dimensoes: [data, veiculo, parceiro, site]
+    dono: Programador de transporte
+    decisoes: [D14]
+    direcao: gatilho
+    gatilho: "< limiar_ocupacao → consolidar carga"
+    parametros: [limiar_ocupacao]
+
+  K19:
+    nome: Custo de frete por kg
+    classe: decisao
+    formula: "soma(custo_viagem / paradas) / soma(kg do cliente na parada)"
+    usa: [custo_viagem, kg_entregues]
+    unidade: moeda/kg
+    data_padrao: data_viagem
+    dimensoes: [data, veiculo, parceiro, site, cliente]
+    dono: Gerente de logística
+    decisoes: [D14]
+    direcao: menor_melhor
+    aviso_exibicao: "Rateio em dois estágios (benchmark IBM Sterling/cost-to-serve): custo da viagem dividido igualmente por parada; na parada, por peso."
