@@ -205,7 +205,9 @@ Recusa de linhas dentro da remessa não é medida aqui: aparece como devolução
 
 ## 8. O que não sei
 
-1. **~~Se a fonte de saldo existe~~ — respondido pelo usuário:** existe na maioria dos ERPs (relatório de saldo + extrato por SKU). Restam: (a) o grão do relatório de saldo (SKU × depósito ou lote × endereço); (b) se o extrato sai em lote para todos os SKUs de um período ou só um SKU por vez. Se for um por vez, a carga manual fica inviável e o produto precisa de integração ou de outro relatório de movimentos.
+1. **~~Fonte e formato do saldo/extrato~~ — resolvido.** Para o tenant de referência, o usuário monta os relatórios no formato que o produto pedir. **[D]** Para o produto, isso vira um **layout canônico de entrada** por fato (detalhado na Etapa 7), com adaptador por ERP. O produto nunca depende de alguém customizar o relatório do ERP para funcionar. Layout ideal desde já:
+   - **Saldo:** uma linha por SKU × lote × endereço (ou SKU × depósito, se o ERP não tiver endereço), com `instante_extracao`, qtd física, bloqueada, reservada, custo unitário.
+   - **Movimentos:** todos os SKUs do período num arquivo, uma linha por movimento, com tipo, documento de origem, lote, endereço, qtd com sinal, **data do movimento e instante do lançamento** (os dois: a diferença entre eles é o que revela o retroativo).
 2. **Data da demanda (desejada × evento):** a escolha correta depende da distribuição da antecedência dos pedidos, que só vem do real.
 
 ## 9. Recalcular com dado real
