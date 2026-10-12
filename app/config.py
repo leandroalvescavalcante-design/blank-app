@@ -5,6 +5,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 ARQ_LAYOUTS = RAIZ / "entrada" / "layouts.yaml"
 ARQ_BRUTO_SQL = RAIZ / "sql" / "bruto.sql"
 ARQ_MODELO_SQL = RAIZ / "sql" / "modelo.sql"
+ARQ_VISOES_SQL = RAIZ / "sql" / "visoes.sql"
+ARQ_METRICAS = RAIZ / "semantica" / "metricas.yaml"
 def caminho_banco() -> Path:
     """Lido a cada conexão (não na importação), para que GESTAO_DB valha também em testes."""
     return Path(os.environ.get("GESTAO_DB", RAIZ / "dados" / "gestao.duckdb"))

@@ -13,7 +13,7 @@ from datetime import date
 import duckdb
 import pandas as pd
 
-from app.config import ARQ_MODELO_SQL, CONFIABILIDADE, EMPRESA_PADRAO
+from app.config import ARQ_MODELO_SQL, ARQ_VISOES_SQL, CONFIABILIDADE, EMPRESA_PADRAO
 from app.validacao import especificacao, layout
 
 DESCONHECIDO, NAO_SE_APLICA = -1, -2
@@ -42,7 +42,7 @@ def linhas_aceitas(con: duckdb.DuckDBPyConnection, nome_layout: str) -> pd.DataF
     df = con.execute(
         """
         SELECT c.carga_id, c.empresa, c.fonte, c.sintetico, c.instante AS instante_carga,
-               l.num_linha, l.payload, l.chave_negocio, l.hash_linha, l.status
+               l.num_linha, l.payload, l.chave_negocio, l.hash_linha, l.status AS status_linha
         FROM bruto_linha l JOIN bruto_carga c USING (carga_id)
         WHERE c.layout = ? AND c.status = 'ACEITA' AND l.status IN ('NOVA', 'CORRECAO')
         ORDER BY c.carga_id, l.num_linha
@@ -52,7 +52,8 @@ def linhas_aceitas(con: duckdb.DuckDBPyConnection, nome_layout: str) -> pd.DataF
     campos = layout(nome_layout)["campos"]
     if df.empty:
         return pd.DataFrame(columns=["carga_id", "empresa", "fonte", "sintetico", "instante_carga", "num_linha",
-                                     "chave_negocio", "hash_linha", "status", *campos])
+                                     "chave_negocio", "hash_linha", "status_linha",
+                                     *[c for c in campos if c != "empresa"]])
     dados = pd.DataFrame([json.loads(p) for p in df["payload"]], index=df.index)
     for nome, spec in campos.items():
         if nome not in dados:
@@ -63,7 +64,8 @@ def linhas_aceitas(con: duckdb.DuckDBPyConnection, nome_layout: str) -> pd.DataF
             dados[nome] = pd.to_datetime(dados[nome])
         elif spec["tipo"] == "texto":
             dados[nome] = dados[nome].astype(object).where(dados[nome].notna(), None)
-    return pd.concat([df.drop(columns=["payload"]), dados[list(campos)]], axis=1)
+    # o campo "empresa" de parametro_empresa coincide com a empresa da carga: vale a da carga
+    return pd.concat([df.drop(columns=["payload"]), dados[[c for c in campos if c != "empresa"]]], axis=1)
 
 
 def versoes_atuais(con, nome_layout: str) -> pd.DataFrame:
@@ -74,10 +76,11 @@ def versoes_atuais(con, nome_layout: str) -> pd.DataFrame:
 def cadastros(con) -> dict[str, dict[str, dict]]:
     """Estado atual dos cadastros: cadastro → {código: atributos}. Base das referências na validação."""
     refs = {}
-    for nome in ("cad_site", "cad_local", "cad_sku", "cad_colaborador"):
+    for nome, spec in especificacao()["layouts"].items():
+        if not nome.startswith("cad_") or len(spec["chave"]) != 1 or nome == "cad_motivo":
+            continue
         df = versoes_atuais(con, nome)
-        chave = layout(nome)["chave"][0]
-        refs[nome] = {r[chave]: r for r in df.to_dict(orient="records")}
+        refs[nome] = {r[spec["chave"][0]]: r for r in df.to_dict(orient="records")}
     motivos = {m["codigo"]: dict(m, origem="PADRAO") for m in especificacao()["motivos_padrao"]}
     for r in versoes_atuais(con, "cad_motivo").to_dict(orient="records"):
         motivos[r["codigo"]] = dict(r, origem="CADASTRO")
@@ -295,10 +298,27 @@ def reconstruir(con: duckdb.DuckDBPyConnection, empresa: str = EMPRESA_PADRAO) -
         "qtd_contada": r["qtd_contada"], "qtd_sistema_congelada": r["qtd_sistema_congelada"]}
         for r in f04.to_dict(orient="records")], columns=list(_COLS_F04))
 
+    # --- frentes 2 e 3 (dimensões e fatos) e calendário operacional
+    from app import planejamento, transform_f23
+    for nome, df in transform_f23.construir(con, empresa, refs).items():
+        especiais = {"dim_cliente": ("cliente_sk", "cliente"), "dim_parceiro": ("parceiro_sk", "cnpj"),
+                     "dim_veiculo": ("veiculo_sk", "placa"), "dim_recurso": ("recurso_sk", "recurso"),
+                     "dim_turno": ("turno_sk", "turno")}
+        tabelas[nome] = _com_especiais(df, *especiais[nome]) if nome in especiais else df
+
     # --- dim_data (intervalo coberto pelos fatos)
     datas = [d for d in list(mov.get("data_movimento", [])) + list(saldo_todas.get("data_saldo", []))
-             + [i.date() for i in cont.get("instante_contagem", [])] if d is not None]
+             + [i.date() for i in cont.get("instante_contagem", [])]
+             + list(tabelas["fato_evento_pedido_venda"].get("data_desejada", []))
+             + list(tabelas["fato_evento_pedido_venda"].get("data_evento", [])) if d is not None and not pd.isna(d)]
     tabelas["dim_data"] = _dim_data(min(datas, default=date.today()), max(datas, default=date.today()))
+    sites = list(tabelas["dim_site"]["site"]) if not tabelas["dim_site"].empty else []
+    tabelas["dim_calendario_operacional"] = pd.DataFrame(
+        [{"site": st, "data": d, "dia_util": d.weekday() != 6} for st in sites for d in tabelas["dim_data"]["data"]],
+        columns=["site", "data", "dia_util"])
+
+    # --- F12 / F12b planejamento (derivados; usam os fatos acima)
+    tabelas.update(planejamento.construir(tabelas, empresa))
 
     con.execute("BEGIN")
     try:
@@ -310,6 +330,7 @@ def reconstruir(con: duckdb.DuckDBPyConnection, empresa: str = EMPRESA_PADRAO) -
             con.execute(f"INSERT INTO {nome} BY NAME SELECT * FROM _tmp")
             con.unregister("_tmp")
         con.execute(_SQL_VISOES)
+        con.execute(ARQ_VISOES_SQL.read_text(encoding="utf-8"))
         con.execute("COMMIT")
     except Exception:
         con.execute("ROLLBACK")

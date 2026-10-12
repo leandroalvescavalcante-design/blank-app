@@ -95,6 +95,8 @@ def _converter(valor: str, spec: dict, nome: str, listas: dict):
             v = texto
             if "max_len" in spec and len(v) > spec["max_len"]:
                 return None, f"{nome}: mais de {spec['max_len']} caracteres"
+            if "regex" in spec and not re.fullmatch(spec["regex"], v):
+                return None, f"{nome}: '{v}' fora do formato exigido"
         elif tipo == "sim_nao":
             v = texto.upper()
             if v not in ("S", "N"):

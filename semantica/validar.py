@@ -17,7 +17,7 @@ CAMPOS_OBRIGATORIOS = ["nome", "classe", "formula", "usa", "unidade", "data_padr
 CLASSES = {"decisao", "diagnostico", "integridade"}
 DIRECOES = {"maior_melhor", "menor_melhor", "alvo_zero", "gatilho"}
 AGREGACOES = {"soma", "ultimo_no_periodo", "nenhuma"}
-DIMENSOES = {"data", "sku", "lote", "local", "cliente", "parceiro", "recurso", "turno",
+DIMENSOES = {"data", "sku", "lote", "local", "site", "cliente", "parceiro", "recurso", "turno",
              "veiculo", "colaborador", "motivo", "procedencia"}
 DECISOES_ONDA_1 = {"D01", "D03", "D04", "D05", "D06", "D07", "D08", "D14", "D15", "D18"}
 # Referências a colunas de fatos derivados ou a outras métricas são permitidas.

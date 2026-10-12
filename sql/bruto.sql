@@ -32,3 +32,13 @@ CREATE TABLE IF NOT EXISTS bruto_linha (
     erros           VARCHAR,
     PRIMARY KEY (carga_id, num_linha)
 );
+
+-- Única exceção à imutabilidade: expurgo de dados SINTÉTICOS, autorizado pelo dono do produto para trocar
+-- o cenário de teste por dados reais. Cada expurgo fica registrado aqui. Dado real nunca é apagado.
+CREATE TABLE IF NOT EXISTS bruto_expurgo (
+    instante        TIMESTAMP NOT NULL,
+    usuario         VARCHAR NOT NULL,
+    n_cargas        INTEGER NOT NULL,
+    n_linhas        INTEGER NOT NULL,
+    motivo          VARCHAR NOT NULL
+);

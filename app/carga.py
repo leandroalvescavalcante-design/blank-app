@@ -47,7 +47,8 @@ def pre_validar(con, nome_layout: str, df: pd.DataFrame) -> ResultadoValidacao:
 
 def registrar(con: duckdb.DuckDBPyConnection, nome_layout: str, df: pd.DataFrame, *, usuario: str,
               fonte: str = "UPLOAD", nome_arquivo: str | None = None, sintetico: bool = False,
-              empresa: str = EMPRESA_PADRAO) -> ResultadoCarga:
+              empresa: str = EMPRESA_PADRAO, reconstruir: bool = True) -> ResultadoCarga:
+    """reconstruir=False adia a reconstrução do modelo (cargas em lote); chame transform.reconstruir no fim."""
     if not usuario or not usuario.strip():
         raise ValueError("usuário é obrigatório para gravar no bruto")
     spec = layout(nome_layout)
@@ -114,7 +115,7 @@ def registrar(con: duckdb.DuckDBPyConnection, nome_layout: str, df: pd.DataFrame
         con.execute("ROLLBACK")
         raise
 
-    if status == "ACEITA" and (n_novas or n_correcoes):
+    if reconstruir and status == "ACEITA" and (n_novas or n_correcoes):
         transform.reconstruir(con, empresa)
     return ResultadoCarga(carga_id, status, len(res.linhas), n_novas, n_correcoes, n_repetidas, res)
 

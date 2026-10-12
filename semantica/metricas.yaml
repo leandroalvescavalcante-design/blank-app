@@ -2,7 +2,7 @@
 # Em conflito com docs/02-kpis-formulas.md, ESTE arquivo vence; o doc guarda a justificativa.
 # Regras globais (R1..R10) estão em docs/06-camada-semantica.md.
 
-versao_camada: 1
+versao_camada: 2
 
 convencoes:
   quantidade: unidade base do SKU
@@ -95,7 +95,7 @@ metricas:
   K01:
     nome: Acuracidade de inventário por posição
     classe: diagnostico
-    formula: "acertos_contagem / posicoes_contadas"
+    formula: "acertos_contagem / posicoes_contadas  (tolerância: parâmetro do SKU; padrão por ABC A 0%, B 2%, C 5%)"
     usa: [acertos_contagem, posicoes_contadas, tolerancia_contagem]
     unidade: "%"
     data_padrao: data_contagem
@@ -113,7 +113,7 @@ metricas:
     usa: [valor_ajuste_abs]
     unidade: moeda
     data_padrao: data_movimento
-    dimensoes: [data, sku, local, motivo, colaborador, procedencia]
+    dimensoes: [data, sku, local, motivo, procedencia]
     dono: Supervisor de armazém
     decisoes: [D08]
     direcao: menor_melhor
@@ -170,8 +170,9 @@ metricas:
       risco_i = saldo_fisico_i - consumivel_i
     usa: [saldo_fisico, validade_minima_sku_local, F12.d]
     unidade: un_base
+    agregado: {unidade: moeda, leitura: "R$ em risco no último dia (entre SKUs só soma em moeda — R7)"}
     data_padrao: data_saldo
-    dimensoes: [data, sku, lote, local, procedencia]
+    dimensoes: [data, sku, lote, site, procedencia]
     dono: Analista de estoque
     decisoes: [D06]
     direcao: gatilho
@@ -196,8 +197,9 @@ metricas:
     formula: "saldo_disponivel / F12.d"
     usa: [saldo_disponivel, F12.d]
     unidade: dias
+    agregado: {unidade: dias, leitura: "razão em valor: Σ saldo×custo / Σ demanda×custo (R7)"}
     data_padrao: data_saldo
-    dimensoes: [data, sku, local, procedencia]
+    dimensoes: [data, sku, site, procedencia]
     dono: Analista de estoque
     decisoes: [D05, D19]
     direcao: gatilho
@@ -225,8 +227,9 @@ metricas:
       rop = d * L + ss
     usa: [demanda_qtd, lead_time_pond, qtd_recebida, K01]
     unidade: un_base
+    agregado: {unidade: "%", leitura: "% dos SKUs com ponto de pedido calculável (os demais: nulo com motivo)"}
     data_padrao: data
-    dimensoes: [data, sku, local]
+    dimensoes: [data, sku, site]
     dono: Analista de estoque
     decisoes: [D04]
     direcao: gatilho
@@ -247,8 +250,9 @@ metricas:
       alerta   = teto < lote_minimo or teto = 0
     usa: [demanda_qtd, converter, validade_minima_sku_local]
     unidade: un_base
+    agregado: {unidade: contagem, leitura: "SKUs com lote inviável no último dia"}
     data_padrao: data
-    dimensoes: [data, sku, local]
+    dimensoes: [data, sku, site]
     dono: PPCP / Compras
     decisoes: [D03]
     direcao: gatilho
@@ -263,7 +267,7 @@ metricas:
     usa: [min_programados, min_disponiveis]
     unidade: "%"
     data_padrao: data_turno
-    dimensoes: [data, turno, recurso, sku]
+    dimensoes: [data, turno, recurso]
     dono: Programador PPCP
     decisoes: [D01]
     direcao: gatilho
@@ -306,8 +310,9 @@ metricas:
       K14 = menor t com posicao(t) < ss
     usa: [saldo_disponivel, demanda_qtd, K09]
     unidade: dias
+    agregado: {unidade: contagem, leitura: "SKUs com ruptura projetada antes do lead time"}
     data_padrao: data
-    dimensoes: [data, sku, local]
+    dimensoes: [data, sku, site]
     dono: Comprador
     decisoes: [D05]
     direcao: gatilho
@@ -321,7 +326,7 @@ metricas:
     usa: [linhas_otif, linhas_devidas, regra_otif]
     unidade: "%"
     data_padrao: data_prometida
-    dimensoes: [data, cliente, sku, local, motivo, procedencia]
+    dimensoes: [data, cliente, sku, site, procedencia]
     dono: Gerente de logística
     decisoes: [D14, D15]
     direcao: maior_melhor
@@ -334,7 +339,7 @@ metricas:
     usa: [qtd_entregue, qtd_alocada]
     unidade: "%"
     data_padrao: data_prometida
-    dimensoes: [data, cliente, sku, local, motivo, procedencia]
+    dimensoes: [data, cliente, sku, site, motivo, procedencia]
     dono: Líder de expedição
     decisoes: [D15]
     direcao: maior_melhor
@@ -346,8 +351,9 @@ metricas:
     formula: "mediana e P90 de (instante_fim_etapa - instante_inicio_etapa); média só para checagem de Little"
     usa: [F11.instantes]
     unidade: horas
+    agregado: {unidade: horas, leitura: "mediana do ciclo total pedido→entrega; P90 ao lado; drill por etapa"}
     data_padrao: data_entrega
-    dimensoes: [data, cliente, sku, local, veiculo, procedencia]
+    dimensoes: [data, cliente, sku, site, veiculo, procedencia]
     dono: Gerente de logística
     decisoes: [D14, D15]
     direcao: menor_melhor
@@ -361,7 +367,7 @@ metricas:
     usa: [peso_viagem, volume_viagem]
     unidade: "%"
     data_padrao: data_viagem
-    dimensoes: [data, veiculo, parceiro, local]
+    dimensoes: [data, veiculo, parceiro, site]
     dono: Programador de transporte
     decisoes: [D14]
     direcao: gatilho
@@ -371,12 +377,12 @@ metricas:
   K19:
     nome: Custo de frete por kg
     classe: decisao
-    formula: "custo_viagem / kg_entregues"
+    formula: "soma(custo_viagem / paradas) / soma(kg do cliente na parada)"
     usa: [custo_viagem, kg_entregues]
     unidade: moeda/kg
     data_padrao: data_viagem
-    dimensoes: [data, veiculo, parceiro, local, cliente]
+    dimensoes: [data, veiculo, parceiro, site, cliente]
     dono: Gerente de logística
     decisoes: [D14]
     direcao: menor_melhor
-    aviso_exibicao: "Por cliente exige rateio do custo da viagem; regra de rateio = peso entregue."
+    aviso_exibicao: "Rateio em dois estágios (benchmark IBM Sterling/cost-to-serve): custo da viagem dividido igualmente por parada; na parada, por peso."

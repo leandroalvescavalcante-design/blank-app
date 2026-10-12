@@ -6,7 +6,7 @@
 #   ref.ausente: rejeitar  → código fora do cadastro recusa a linha (poka-yoke)
 #                inferir   → cria membro inferido (Etapa 4, regra 4); usado em extrações de ERP
 # regras: expressões sobre a linha já tipada; vazio(x) testa ausência.
-# implementado: false → layout especificado, carga para o fato ainda não construída (fora das 3 frentes ativas).
+# regex: padrão obrigatório (CNPJ, placa, chave de NF-e).
 # politica: tudo_ou_nada → uma linha inválida recusa o arquivo inteiro (nada chega ao fato; o bruto guarda tudo).
 
 listas:
@@ -16,10 +16,16 @@ listas:
   tipo_sku: [MP, PA, EMBALAGEM, REVENDA]
   unidade: [UN, CX, FD, PL, KG, L, M3]
   funcao: [INVENTARIANTE, CONFERENTE, SEPARADOR, OPERADOR, MOTORISTA, SUPERVISOR, ANALISTA]
-  processo_motivo: [RECEBIMENTO, DIVERGENCIA, AJUSTE, BAIXA, CORTE, PARADA, REFUGO, DEVOLUCAO, ENTREGA_FRUSTRADA]
+  processo_motivo: [RECEBIMENTO, DIVERGENCIA, AJUSTE, BAIXA, CORTE, PARADA, REFUGO, DEVOLUCAO, ENTREGA_FRUSTRADA, CANCELAMENTO]
   etapa_origem: [RECEBIMENTO, ENDERECAMENTO, SEPARACAO, CONFERENCIA, DESCONHECIDA, NAO_SE_APLICA]
   categoria_perda: [VENCIMENTO, AVARIA, AJUSTE, OUTRO, NAO_SE_APLICA]
   documento_tipo: [RECEBIMENTO, OP, SEPARACAO, NF_SAIDA, NF_ENTRADA, CONTAGEM, TRANSFERENCIA, AJUSTE, OUTRO]
+  uf: [AC, AL, AP, AM, BA, CE, DF, ES, GO, MA, MT, MS, MG, PA, PB, PR, PE, PI, RJ, RN, RS, RO, RR, SC, SP, SE, TO]
+  tipo_veiculo: [VUC, TOCO, TRUCK, CARRETA, UTILITARIO]
+  tipo_recurso: [LINHA, MAQUINA, CELULA]
+  evento_pedido: [EMISSAO, ALTERACAO, CANCELAMENTO]
+  evento_pedido_venda: [CRIACAO, ALTERACAO, CANCELAMENTO]
+  status_entrega: [ENTREGUE, PARCIAL, FRUSTRADA]
 
 # dim_tipo_movimento (Etapa 5, ajuste 1). Lista fechada; sinal = sinal esperado da quantidade.
 tipos_movimento:
@@ -44,6 +50,15 @@ motivos_padrao:
   - {codigo: DIV_CONFERENCIA,  descricao: Erro não detectado na conferência,    processo: DIVERGENCIA, etapa_origem: CONFERENCIA,   gera_baixa: N, categoria_perda: AJUSTE,        controlavel: S}
   - {codigo: BAIXA_VENCIMENTO, descricao: Descarte por vencimento,              processo: BAIXA,       etapa_origem: NAO_SE_APLICA, gera_baixa: S, categoria_perda: VENCIMENTO,    controlavel: S}
   - {codigo: BAIXA_AVARIA,     descricao: Descarte por avaria,                  processo: BAIXA,       etapa_origem: NAO_SE_APLICA, gera_baixa: S, categoria_perda: AVARIA,        controlavel: S}
+  - {codigo: CORTE_FALTA_SALDO,  descricao: Corte por falta de saldo disponível,  processo: CORTE,       etapa_origem: NAO_SE_APLICA, gera_baixa: N, categoria_perda: NAO_SE_APLICA, controlavel: S}
+  - {codigo: CORTE_VALIDADE,     descricao: Corte por falta de lote com validade aceita pelo cliente, processo: CORTE, etapa_origem: NAO_SE_APLICA, gera_baixa: N, categoria_perda: NAO_SE_APLICA, controlavel: S}
+  - {codigo: ENT_CLIENTE_FECHADO, descricao: Cliente fechado / sem recebedor,     processo: ENTREGA_FRUSTRADA, etapa_origem: NAO_SE_APLICA, gera_baixa: N, categoria_perda: NAO_SE_APLICA, controlavel: N}
+  - {codigo: ENT_FORA_JANELA,    descricao: Chegada fora da janela do cliente,    processo: ENTREGA_FRUSTRADA, etapa_origem: NAO_SE_APLICA, gera_baixa: N, categoria_perda: NAO_SE_APLICA, controlavel: S}
+  - {codigo: ENT_RECUSA_PARCIAL, descricao: Recusa parcial na entrega,            processo: ENTREGA_FRUSTRADA, etapa_origem: NAO_SE_APLICA, gera_baixa: N, categoria_perda: NAO_SE_APLICA, controlavel: S}
+  - {codigo: REF_QUALIDADE,      descricao: Refugo por não conformidade,          processo: REFUGO,      etapa_origem: NAO_SE_APLICA, gera_baixa: S, categoria_perda: OUTRO,         controlavel: S}
+  - {codigo: REC_AVARIA,         descricao: Recusa no recebimento por avaria,     processo: RECEBIMENTO, etapa_origem: NAO_SE_APLICA, gera_baixa: N, categoria_perda: NAO_SE_APLICA, controlavel: N}
+  - {codigo: REC_VALIDADE,       descricao: Recusa no recebimento por validade curta, processo: RECEBIMENTO, etapa_origem: NAO_SE_APLICA, gera_baixa: N, categoria_perda: NAO_SE_APLICA, controlavel: N}
+  - {codigo: CANC_CLIENTE,       descricao: Cancelamento solicitado pelo cliente, processo: CANCELAMENTO, etapa_origem: NAO_SE_APLICA, gera_baixa: N, categoria_perda: NAO_SE_APLICA, controlavel: N}
 
 layouts:
 
@@ -232,175 +247,345 @@ layouts:
       motivo:          {tipo: texto, obrigatorio: true, ref: {cadastro: cad_motivo, ausente: rejeitar}}
       matricula:       {tipo: texto, obrigatorio: true, ref: {cadastro: cad_colaborador, ausente: rejeitar}}
 
-  # ------------------------------------------- frentes 2 e 3 (especificadas)
+  # ------------------------------------------- cadastros das frentes 2 e 3
+  cad_cliente:
+    descricao: Cliente com ponto de entrega, janela, prioridade de atendimento e validade mínima aceita
+    canal: [upload]
+    destino: dim_cliente
+    implementado: true
+    chave: [cliente]
+    campos:
+      cliente:              {tipo: texto, obrigatorio: true, max_len: 30}
+      nome:                 {tipo: texto, obrigatorio: true, max_len: 120}
+      municipio:            {tipo: texto, obrigatorio: true, max_len: 60}
+      uf:                   {tipo: texto, obrigatorio: true, lista: uf}
+      latitude:             {tipo: decimal, obrigatorio: true, min: -34, max: 6}
+      longitude:            {tipo: decimal, obrigatorio: true, min: -74, max: -28}
+      janela_inicio:        {tipo: hora, obrigatorio: true}
+      janela_fim:           {tipo: hora, obrigatorio: true}
+      prioridade:           {tipo: inteiro, obrigatorio: true, min: 1, max: 5}
+      validade_minima_dias: {tipo: inteiro, obrigatorio: false, min: 0, max: 3650}
+    regras:
+      - {expr: "janela_fim > janela_inicio", msg: "fim da janela deve ser depois do início"}
+
+  cad_parceiro:
+    descricao: Parceiro (fornecedor e/ou transportadora), identificado por CNPJ
+    canal: [upload]
+    destino: dim_parceiro
+    implementado: true
+    chave: [cnpj]
+    campos:
+      cnpj:             {tipo: texto, obrigatorio: true, regex: "^[0-9]{14}$"}
+      razao_social:     {tipo: texto, obrigatorio: true, max_len: 120}
+      e_fornecedor:     {tipo: sim_nao, obrigatorio: true}
+      e_transportadora: {tipo: sim_nao, obrigatorio: true}
+    regras:
+      - {expr: "e_fornecedor == 'S' or e_transportadora == 'S'", msg: "parceiro precisa ter ao menos um papel"}
+
+  cad_parceiro_sku:
+    descricao: Condição de fornecimento (lote mínimo, múltiplo, lead time contratado)
+    canal: [upload]
+    destino: parceiro_sku
+    implementado: true
+    chave: [cnpj, sku]
+    campos:
+      cnpj:                      {tipo: texto, obrigatorio: true, ref: {cadastro: cad_parceiro, ausente: rejeitar}}
+      sku:                       {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: rejeitar}}
+      lote_minimo:               {tipo: decimal, obrigatorio: true, min: 0}
+      multiplo_compra:           {tipo: decimal, obrigatorio: true, min: 0.000001}
+      lead_time_contratado_dias: {tipo: inteiro, obrigatorio: true, min: 0, max: 365}
+
+  cad_veiculo:
+    descricao: Veículo com capacidade em kg e m³ e classe de temperatura
+    canal: [upload]
+    destino: dim_veiculo
+    implementado: true
+    chave: [placa]
+    campos:
+      placa:               {tipo: texto, obrigatorio: true, regex: "^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$"}
+      tipo:                {tipo: texto, obrigatorio: true, lista: tipo_veiculo}
+      cap_kg:              {tipo: decimal, obrigatorio: true, min: 1, max: 60000}
+      cap_m3:              {tipo: decimal, obrigatorio: true, min: 0.1, max: 150}
+      classe_temperatura:  {tipo: texto, obrigatorio: true, lista: classe_temperatura}
+      propria:             {tipo: sim_nao, obrigatorio: true}
+      transportadora_cnpj: {tipo: texto, obrigatorio: false, ref: {cadastro: cad_parceiro, ausente: rejeitar}}
+    regras:
+      - {expr: "propria == 'S' or not vazio(transportadora_cnpj)", msg: "veículo terceiro precisa da transportadora"}
+
+  cad_recurso:
+    descricao: Recurso produtivo; o restritivo (gargalo) é configurável
+    canal: [upload]
+    destino: dim_recurso
+    implementado: true
+    chave: [recurso]
+    campos:
+      recurso:      {tipo: texto, obrigatorio: true, max_len: 20}
+      descricao:    {tipo: texto, obrigatorio: true, max_len: 80}
+      site:         {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
+      tipo:         {tipo: texto, obrigatorio: true, lista: tipo_recurso}
+      e_restritivo: {tipo: sim_nao, obrigatorio: true}
+
+  cad_turno:
+    descricao: Turno de trabalho (código único na empresa) com horas disponíveis
+    canal: [upload]
+    destino: dim_turno
+    implementado: true
+    chave: [turno]
+    campos:
+      turno:             {tipo: texto, obrigatorio: true, max_len: 10}
+      site:              {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
+      inicio:            {tipo: hora, obrigatorio: true}
+      fim:               {tipo: hora, obrigatorio: true}
+      horas_disponiveis: {tipo: decimal, obrigatorio: true, min: 0.5, max: 24}
+
+  cad_setup:
+    descricao: Matriz de setup (minutos) por recurso e troca de família
+    canal: [upload]
+    destino: matriz_setup
+    implementado: true
+    chave: [recurso, familia_origem, familia_destino]
+    campos:
+      recurso:         {tipo: texto, obrigatorio: true, ref: {cadastro: cad_recurso, ausente: rejeitar}}
+      familia_origem:  {tipo: texto, obrigatorio: true, max_len: 30}
+      familia_destino: {tipo: texto, obrigatorio: true, max_len: 30}
+      minutos:         {tipo: decimal, obrigatorio: true, min: 0, max: 1440}
+
+  cad_acordo_validade:
+    descricao: Validade mínima acordada por cliente × SKU (prevalece sobre o cliente e o SKU)
+    canal: [upload]
+    destino: acordo_validade
+    implementado: true
+    chave: [cliente, sku]
+    campos:
+      cliente:              {tipo: texto, obrigatorio: true, ref: {cadastro: cad_cliente, ausente: rejeitar}}
+      sku:                  {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: rejeitar}}
+      validade_minima_dias: {tipo: inteiro, obrigatorio: true, min: 0, max: 3650}
+
+  parametro_sku_local:
+    descricao: Parâmetros de planejamento do gestor por SKU × site (entradas; os valores calculados ficam em F12)
+    canal: [upload]
+    destino: parametro_sku_local
+    implementado: true
+    chave: [sku, site]
+    campos:
+      sku:                      {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: rejeitar}}
+      site:                     {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
+      nivel_servico:            {tipo: decimal, obrigatorio: true, min: 0.5, max: 0.999}
+      dias_parados:             {tipo: inteiro, obrigatorio: true, min: 0, max: 60}
+      transito_dias:            {tipo: inteiro, obrigatorio: true, min: 0, max: 60}
+      custo_pedido:             {tipo: decimal, obrigatorio: true, min: 0}
+      taxa_manter_ano:          {tipo: decimal, obrigatorio: true, min: 0, max: 2}
+      lead_time_reposicao_dias: {tipo: inteiro, obrigatorio: false, min: 0, max: 365}
+      tolerancia_contagem_pct:  {tipo: decimal, obrigatorio: false, min: 0, max: 0.5}
+
+  parametro_empresa:
+    descricao: Políticas da empresa (regra de OTIF, limiares, janelas). Uma linha; nova carga = nova versão.
+    canal: [upload]
+    destino: parametro_empresa
+    implementado: true
+    chave: [empresa]
+    campos:
+      empresa:                {tipo: texto, obrigatorio: true, max_len: 20}
+      otif_tolerancia_pct:    {tipo: decimal, obrigatorio: true, min: 0, max: 0.5}
+      limiar_ocupacao:        {tipo: decimal, obrigatorio: true, min: 0, max: 1.5}
+      limiar_k02b:            {tipo: decimal, obrigatorio: true, min: 0, max: 1}
+      n_min_observacoes:      {tipo: inteiro, obrigatorio: true, min: 2, max: 1000}
+      janela_demanda_dias:    {tipo: inteiro, obrigatorio: true, min: 7, max: 730}
+      janela_lead_time_dias:  {tipo: inteiro, obrigatorio: true, min: 7, max: 730}
+      janela_clientes_dias:   {tipo: inteiro, obrigatorio: true, min: 7, max: 730}
+      apto_n_contagens:       {tipo: inteiro, obrigatorio: true, min: 1, max: 100}
+      apto_janela_dias:       {tipo: inteiro, obrigatorio: true, min: 7, max: 365}
+      apto_limiar:            {tipo: decimal, obrigatorio: true, min: 0, max: 1}
+      horizonte_projecao_dias: {tipo: inteiro, obrigatorio: true, min: 7, max: 180}
+
+  # ------------------------------------------- transacionais das frentes 2 e 3
   recebimento:
     descricao: Linha de recebimento conferida (F01)
-    canal: [upload, formulario]
+    canal: [upload]
     destino: fato_recebimento
-    implementado: false
+    implementado: true
     chave: [numero_recebimento, item, lote]
     campos:
-      numero_recebimento:   {tipo: texto, obrigatorio: true}
+      numero_recebimento:   {tipo: texto, obrigatorio: true, max_len: 40}
       item:                 {tipo: inteiro, obrigatorio: true, min: 1}
-      numero_pc:            {tipo: texto, obrigatorio: false}
-      item_pc:              {tipo: inteiro, obrigatorio: false}
-      chave_nf_entrada:     {tipo: texto, obrigatorio: false, max_len: 44}
-      fornecedor_cnpj:      {tipo: texto, obrigatorio: true}
-      sku:                  {tipo: texto, obrigatorio: true}
-      lote:                 {tipo: texto, obrigatorio: false}
+      numero_pc:            {tipo: texto, obrigatorio: false, max_len: 40}
+      item_pc:              {tipo: inteiro, obrigatorio: false, min: 1}
+      chave_nf_entrada:     {tipo: texto, obrigatorio: false, regex: "^[0-9]{44}$"}
+      fornecedor_cnpj:      {tipo: texto, obrigatorio: true, ref: {cadastro: cad_parceiro, ausente: rejeitar}}
+      sku:                  {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: inferir}}
+      lote:                 {tipo: texto, obrigatorio: false, max_len: 30}
       data_validade:        {tipo: data, obrigatorio: false}
-      endereco:             {tipo: texto, obrigatorio: true}
+      endereco:             {tipo: texto, obrigatorio: true, ref: {cadastro: cad_local, ausente: inferir}}
       qtd_esperada:         {tipo: decimal, obrigatorio: true, min: 0}
       qtd_recebida:         {tipo: decimal, obrigatorio: true, min: 0}
       qtd_recusada:         {tipo: decimal, obrigatorio: true, min: 0}
-      motivo:               {tipo: texto, obrigatorio: false}
-      matricula_conferente: {tipo: texto, obrigatorio: true}
+      motivo:               {tipo: texto, obrigatorio: false, ref: {cadastro: cad_motivo, ausente: rejeitar}}
+      matricula_conferente: {tipo: texto, obrigatorio: true, ref: {cadastro: cad_colaborador, ausente: rejeitar}}
       instante_conferencia: {tipo: instante, obrigatorio: true}
+    regras:
+      - {expr: "qtd_recusada == 0 or not vazio(motivo)", msg: "recusa exige motivo"}
+      - {expr: "vazio(numero_pc) == vazio(item_pc)", msg: "número e item do PC andam juntos"}
 
   pedido_compra_evento:
-    descricao: Evento de linha de pedido de compra (emissão, alteração de data/quantidade, cancelamento) → F05
+    descricao: Evento de linha de pedido de compra (emissão, alteração, cancelamento) → F05
     canal: [upload]
     destino: fato_pedido_compra_linha
-    implementado: false
+    implementado: true
     chave: [numero_pc, item, numero_evento]
     campos:
-      numero_pc:       {tipo: texto, obrigatorio: true}
+      numero_pc:       {tipo: texto, obrigatorio: true, max_len: 40}
       item:            {tipo: inteiro, obrigatorio: true, min: 1}
       numero_evento:   {tipo: inteiro, obrigatorio: true, min: 1}
-      tipo_evento:     {tipo: texto, obrigatorio: true}
-      fornecedor_cnpj: {tipo: texto, obrigatorio: true}
-      sku:             {tipo: texto, obrigatorio: true}
-      endereco:        {tipo: texto, obrigatorio: true}
+      tipo_evento:     {tipo: texto, obrigatorio: true, lista: evento_pedido}
+      fornecedor_cnpj: {tipo: texto, obrigatorio: true, ref: {cadastro: cad_parceiro, ausente: rejeitar}}
+      sku:             {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: inferir}}
+      site:            {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
       delta_qtd:       {tipo: decimal, obrigatorio: true}
       data_prevista:   {tipo: data, obrigatorio: true}
       instante_evento: {tipo: instante, obrigatorio: true}
-      motivo:          {tipo: texto, obrigatorio: false}
+      motivo:          {tipo: texto, obrigatorio: false, ref: {cadastro: cad_motivo, ausente: rejeitar}}
+    regras:
+      - {expr: "tipo_evento != 'EMISSAO' or delta_qtd > 0", msg: "emissão precisa de quantidade positiva"}
+      - {expr: "tipo_evento != 'CANCELAMENTO' or delta_qtd <= 0", msg: "cancelamento não aumenta quantidade"}
 
   programacao_op:
     descricao: OP alocada a recurso e turno numa versão do programa (F06a)
     canal: [upload]
     destino: fato_programacao_op
-    implementado: false
+    implementado: true
     chave: [numero_op, recurso, data, turno, versao]
     campos:
-      numero_op:          {tipo: texto, obrigatorio: true}
-      versao:             {tipo: inteiro, obrigatorio: true, min: 1}
-      congelada:          {tipo: sim_nao, obrigatorio: true}
-      data:               {tipo: data, obrigatorio: true}
-      turno:              {tipo: texto, obrigatorio: true}
-      recurso:            {tipo: texto, obrigatorio: true}
-      sku:                {tipo: texto, obrigatorio: true}
-      sequencia:          {tipo: inteiro, obrigatorio: true, min: 1}
-      qtd_programada:     {tipo: decimal, obrigatorio: true, min: 0}
+      numero_op:           {tipo: texto, obrigatorio: true, max_len: 40}
+      versao:              {tipo: inteiro, obrigatorio: true, min: 1}
+      congelada:           {tipo: sim_nao, obrigatorio: true}
+      data:                {tipo: data, obrigatorio: true}
+      turno:               {tipo: texto, obrigatorio: true, ref: {cadastro: cad_turno, ausente: rejeitar}}
+      recurso:             {tipo: texto, obrigatorio: true, ref: {cadastro: cad_recurso, ausente: rejeitar}}
+      sku:                 {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: rejeitar}}
+      sequencia:           {tipo: inteiro, obrigatorio: true, min: 1}
+      qtd_programada:      {tipo: decimal, obrigatorio: true, min: 0}
       tempo_padrao_min_un: {tipo: decimal, obrigatorio: true, min: 0}
-      setup_min:          {tipo: decimal, obrigatorio: true, min: 0}
+      setup_min:           {tipo: decimal, obrigatorio: true, min: 0}
 
   apontamento:
     descricao: Apontamento de produção (F06b)
-    canal: [formulario, upload]
+    canal: [upload]
     destino: fato_apontamento
-    implementado: false
+    implementado: true
     chave: [numero_op, recurso, numero_apontamento]
     campos:
-      numero_op:            {tipo: texto, obrigatorio: true}
+      numero_op:            {tipo: texto, obrigatorio: true, max_len: 40}
       numero_apontamento:   {tipo: inteiro, obrigatorio: true, min: 1}
-      recurso:              {tipo: texto, obrigatorio: true}
-      turno:                {tipo: texto, obrigatorio: true}
-      sku:                  {tipo: texto, obrigatorio: true}
-      lote:                 {tipo: texto, obrigatorio: false}
+      recurso:              {tipo: texto, obrigatorio: true, ref: {cadastro: cad_recurso, ausente: rejeitar}}
+      turno:                {tipo: texto, obrigatorio: true, ref: {cadastro: cad_turno, ausente: rejeitar}}
+      sku:                  {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: rejeitar}}
+      lote:                 {tipo: texto, obrigatorio: false, max_len: 30}
       qtd_boa:              {tipo: decimal, obrigatorio: true, min: 0}
       qtd_refugo:           {tipo: decimal, obrigatorio: true, min: 0}
-      motivo_refugo:        {tipo: texto, obrigatorio: false}
+      motivo_refugo:        {tipo: texto, obrigatorio: false, ref: {cadastro: cad_motivo, ausente: rejeitar}}
       instante_apontamento: {tipo: instante, obrigatorio: true}
+    regras:
+      - {expr: "qtd_refugo == 0 or not vazio(motivo_refugo)", msg: "refugo exige motivo"}
 
   pedido_venda_evento:
     descricao: Evento do CLIENTE sobre linha de pedido de venda (F07) — corte próprio não entra aqui
     canal: [upload]
     destino: fato_evento_pedido_venda
-    implementado: false
+    implementado: true
     chave: [numero_pedido, item, numero_evento]
     campos:
-      numero_pedido:   {tipo: texto, obrigatorio: true}
+      numero_pedido:   {tipo: texto, obrigatorio: true, max_len: 40}
       item:            {tipo: inteiro, obrigatorio: true, min: 1}
       numero_evento:   {tipo: inteiro, obrigatorio: true, min: 1}
-      tipo_evento:     {tipo: texto, obrigatorio: true}
-      cliente:         {tipo: texto, obrigatorio: true}
-      sku:             {tipo: texto, obrigatorio: true}
-      site:            {tipo: texto, obrigatorio: true}
+      tipo_evento:     {tipo: texto, obrigatorio: true, lista: evento_pedido_venda}
+      cliente:         {tipo: texto, obrigatorio: true, ref: {cadastro: cad_cliente, ausente: rejeitar}}
+      sku:             {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: inferir}}
+      site:            {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
       delta_qtd:       {tipo: decimal, obrigatorio: true}
       data_desejada:   {tipo: data, obrigatorio: true}
       instante_evento: {tipo: instante, obrigatorio: true}
-      motivo:          {tipo: texto, obrigatorio: false}
+      motivo:          {tipo: texto, obrigatorio: false, ref: {cadastro: cad_motivo, ausente: rejeitar}}
+    regras:
+      - {expr: "tipo_evento != 'CRIACAO' or delta_qtd > 0", msg: "criação precisa de quantidade positiva"}
+      - {expr: "tipo_evento != 'CANCELAMENTO' or delta_qtd <= 0", msg: "cancelamento não aumenta quantidade"}
 
   separacao:
-    descricao: Tarefa de separação e conferência (F08)
-    canal: [upload, formulario]
+    descricao: Tarefa de separação e conferência (F08). A ordem de separação é a remessa.
+    canal: [upload]
     destino: fato_separacao
-    implementado: false
+    implementado: true
     chave: [numero_tarefa]
     campos:
-      numero_tarefa:          {tipo: texto, obrigatorio: true}
-      numero_pedido:          {tipo: texto, obrigatorio: true}
-      item:                   {tipo: inteiro, obrigatorio: true}
-      remessa:                {tipo: texto, obrigatorio: true}
-      sku:                    {tipo: texto, obrigatorio: true}
-      lote:                   {tipo: texto, obrigatorio: false}
-      endereco:               {tipo: texto, obrigatorio: true}
-      qtd_solicitada:         {tipo: decimal, obrigatorio: true, min: 0}
-      qtd_separada:           {tipo: decimal, obrigatorio: true, min: 0}
-      qtd_conferida:          {tipo: decimal, obrigatorio: true, min: 0}
-      matricula_separador:    {tipo: texto, obrigatorio: true}
-      matricula_conferente:   {tipo: texto, obrigatorio: true}
-      instante_separacao:     {tipo: instante, obrigatorio: true}
-      instante_conferencia:   {tipo: instante, obrigatorio: true}
-      motivo:                 {tipo: texto, obrigatorio: false}
+      numero_tarefa:        {tipo: texto, obrigatorio: true, max_len: 40}
+      ordem_separacao:      {tipo: texto, obrigatorio: true, max_len: 40}
+      numero_pedido:        {tipo: texto, obrigatorio: true, max_len: 40}
+      item:                 {tipo: inteiro, obrigatorio: true, min: 1}
+      sku:                  {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: inferir}}
+      lote:                 {tipo: texto, obrigatorio: false, max_len: 30}
+      endereco:             {tipo: texto, obrigatorio: true, ref: {cadastro: cad_local, ausente: inferir}}
+      qtd_solicitada:       {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_separada:         {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_conferida:        {tipo: decimal, obrigatorio: true, min: 0}
+      matricula_separador:  {tipo: texto, obrigatorio: true, ref: {cadastro: cad_colaborador, ausente: rejeitar}}
+      matricula_conferente: {tipo: texto, obrigatorio: true, ref: {cadastro: cad_colaborador, ausente: rejeitar}}
+      instante_separacao:   {tipo: instante, obrigatorio: true}
+      instante_conferencia: {tipo: instante, obrigatorio: true}
+      motivo:               {tipo: texto, obrigatorio: false, ref: {cadastro: cad_motivo, ausente: rejeitar}}
+    regras:
+      - {expr: "instante_conferencia >= instante_separacao", msg: "conferência anterior à separação"}
+      - {expr: "(qtd_separada == qtd_solicitada and qtd_conferida == qtd_separada) or not vazio(motivo)", msg: "divergência na separação/conferência exige motivo"}
 
   faturamento:
-    descricao: Item de NF de saída ligado a linha de pedido × remessa (F09)
+    descricao: Item de NF de saída ligado a linha de pedido e remessa (F09). Sem ordem de separação, a remessa é a NF.
     canal: [upload]
     destino: fato_faturamento
-    implementado: false
+    implementado: true
     chave: [chave_nf, item_nf]
     campos:
-      chave_nf:         {tipo: texto, obrigatorio: true, max_len: 44}
+      chave_nf:         {tipo: texto, obrigatorio: true, regex: "^[0-9]{44}$"}
       item_nf:          {tipo: inteiro, obrigatorio: true, min: 1}
-      numero_pedido:    {tipo: texto, obrigatorio: true}
-      item_pedido:      {tipo: inteiro, obrigatorio: true}
-      remessa:          {tipo: texto, obrigatorio: true}
-      cliente:          {tipo: texto, obrigatorio: true}
-      sku:              {tipo: texto, obrigatorio: true}
-      qtd:              {tipo: decimal, obrigatorio: true}
-      valor_mercadoria: {tipo: decimal, obrigatorio: true}
+      numero_pedido:    {tipo: texto, obrigatorio: true, max_len: 40}
+      item_pedido:      {tipo: inteiro, obrigatorio: true, min: 1}
+      ordem_separacao:  {tipo: texto, obrigatorio: false, max_len: 40}
+      cliente:          {tipo: texto, obrigatorio: true, ref: {cadastro: cad_cliente, ausente: rejeitar}}
+      sku:              {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: inferir}}
+      site:             {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
+      qtd:              {tipo: decimal, obrigatorio: true, min: 0}
+      valor_mercadoria: {tipo: decimal, obrigatorio: true, min: 0}
       instante_emissao: {tipo: instante, obrigatorio: true}
 
   viagem:
-    descricao: Viagem de veículo (F10a)
-    canal: [upload, formulario]
+    descricao: Viagem de veículo (F10a). Peso e volume são calculados pelas remessas entregues, não digitados.
+    canal: [upload]
     destino: fato_viagem
-    implementado: false
+    implementado: true
     chave: [numero_viagem]
     campos:
-      numero_viagem:      {tipo: texto, obrigatorio: true}
-      placa:              {tipo: texto, obrigatorio: true}
-      matricula_motorista: {tipo: texto, obrigatorio: true}
-      transportadora_cnpj: {tipo: texto, obrigatorio: false}
-      site:               {tipo: texto, obrigatorio: true}
-      custo_viagem:       {tipo: decimal, obrigatorio: true, min: 0}
-      instante_saida:     {tipo: instante, obrigatorio: true}
-      instante_retorno:   {tipo: instante, obrigatorio: false}
+      numero_viagem:       {tipo: texto, obrigatorio: true, max_len: 40}
+      placa:               {tipo: texto, obrigatorio: true, ref: {cadastro: cad_veiculo, ausente: rejeitar}}
+      matricula_motorista: {tipo: texto, obrigatorio: true, ref: {cadastro: cad_colaborador, ausente: rejeitar}}
+      site:                {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
+      custo_viagem:        {tipo: decimal, obrigatorio: true, min: 0}
+      instante_saida:      {tipo: instante, obrigatorio: true}
+      instante_retorno:    {tipo: instante, obrigatorio: false}
+    regras:
+      - {expr: "vazio(instante_retorno) or instante_retorno > instante_saida", msg: "retorno anterior à saída"}
 
   entrega:
-    descricao: Tentativa de entrega de uma remessa (F10b)
-    canal: [formulario, upload]
+    descricao: Tentativa de entrega de uma remessa (F10b). Remessa = ordem de separação (ou chave da NF, se não houver ordem).
+    canal: [upload]
     destino: fato_entrega
-    implementado: false
+    implementado: true
     chave: [numero_viagem, remessa, numero_tentativa]
     campos:
-      numero_viagem:      {tipo: texto, obrigatorio: true}
-      remessa:            {tipo: texto, obrigatorio: true}
-      numero_tentativa:   {tipo: inteiro, obrigatorio: true, min: 1}
-      cliente:            {tipo: texto, obrigatorio: true}
-      status:             {tipo: texto, obrigatorio: true}
-      motivo:             {tipo: texto, obrigatorio: false}
+      numero_viagem:      {tipo: texto, obrigatorio: true, max_len: 40}
+      remessa:            {tipo: texto, obrigatorio: true, max_len: 44}
+      numero_tentativa:   {tipo: inteiro, obrigatorio: true, min: 1, max: 9}
+      cliente:            {tipo: texto, obrigatorio: true, ref: {cadastro: cad_cliente, ausente: rejeitar}}
+      status:             {tipo: texto, obrigatorio: true, lista: status_entrega}
+      motivo:             {tipo: texto, obrigatorio: false, ref: {cadastro: cad_motivo, ausente: rejeitar}}
       instante_chegada:   {tipo: instante, obrigatorio: true}
       instante_conclusao: {tipo: instante, obrigatorio: true}
+    regras:
+      - {expr: "instante_conclusao >= instante_chegada", msg: "conclusão anterior à chegada"}
+      - {expr: "status == 'ENTREGUE' or not vazio(motivo)", msg: "entrega frustrada ou parcial exige motivo"}

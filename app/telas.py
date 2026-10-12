@@ -42,7 +42,7 @@ def exigir_usuario() -> bool:
 def mostrar_resultado(r: carga.ResultadoCarga) -> None:
     {"ACEITA": st.success, "DUPLICADA": st.info, "RECUSADA": st.error}[r.status](r.mensagem)
     if r.status == "RECUSADA":
-        st.dataframe(r.validacao.tabela_erros(), hide_index=True, use_container_width=True)
+        st.dataframe(r.validacao.tabela_erros(), hide_index=True, width="stretch")
 
 
 # ----------------------------------------------------------------------------- páginas
@@ -60,7 +60,7 @@ def pagina_upload():
     with col2:
         st.download_button("Baixar modelo CSV", modelo_csv(nome), file_name=f"{nome}.csv", mime="text/csv")
     with st.expander("Campos do layout"):
-        st.dataframe(_tabela_campos(spec), hide_index=True, use_container_width=True)
+        st.dataframe(_tabela_campos(spec), hide_index=True, width="stretch")
 
     arquivo = st.file_uploader("Arquivo (CSV com ';' ou ',', ou XLSX)", type=["csv", "xlsx"], key=f"up_{nome}")
     if arquivo is None:
@@ -77,7 +77,7 @@ def pagina_upload():
     else:
         st.error(f"{res.n_erros} erro(s). Política tudo-ou-nada: corrija o arquivo; se registrar, a carga entra como RECUSADA "
                  "(fica no histórico, nada chega ao modelo).")
-        st.dataframe(res.tabela_erros(), hide_index=True, use_container_width=True)
+        st.dataframe(res.tabela_erros(), hide_index=True, width="stretch")
     sintetico = st.checkbox("Dados sintéticos (tudo o que derivar nasce provisório)", value=False)
     if st.button("Registrar carga", type="primary", disabled=not usuario()):
         r = carga.registrar(con(), nome, df, usuario=usuario(), fonte="UPLOAD", nome_arquivo=arquivo.name,
@@ -186,7 +186,7 @@ def pagina_investigacao():
     if pend.empty:
         st.info("Nenhuma divergência final pendente de investigação.")
         return
-    st.dataframe(pend, hide_index=True, use_container_width=True)
+    st.dataframe(pend, hide_index=True, width="stretch")
     opcoes = pend.to_dict(orient="records")
     supervisores = consultas.colaboradores(c, ("SUPERVISOR",))
     motivos = c.execute("SELECT codigo, descricao FROM dim_motivo WHERE processo = 'DIVERGENCIA' ORDER BY codigo").fetchall()
@@ -215,18 +215,18 @@ def pagina_cargas():
     c = con()
     hist = consultas.historico_cargas(c)
     st.subheader("Histórico de cargas (camada bruta)")
-    st.dataframe(hist, hide_index=True, use_container_width=True)
+    st.dataframe(hist, hide_index=True, width="stretch")
     recusadas = hist[hist["status"] == "RECUSADA"]
     if not recusadas.empty:
         cid = st.selectbox("Ver erros da carga recusada", recusadas["carga_id"].tolist())
-        st.dataframe(consultas.erros_da_carga(c, int(cid)), hide_index=True, use_container_width=True)
+        st.dataframe(consultas.erros_da_carga(c, int(cid)), hide_index=True, width="stretch")
 
     st.subheader("Reconciliação saldo × movimentos (K04)")
     st.caption("Mede a integridade da CARGA contra o ERP — não mede acuracidade física (isso é a contagem).")
-    st.dataframe(consultas.resumo_reconciliacao(c), hide_index=True, use_container_width=True)
+    st.dataframe(consultas.resumo_reconciliacao(c), hide_index=True, width="stretch")
     exc = consultas.excecoes_reconciliacao(c)
     if not exc.empty:
-        st.dataframe(exc, hide_index=True, use_container_width=True)
+        st.dataframe(exc, hide_index=True, width="stretch")
 
     st.subheader("Membros inferidos (código usado antes de cadastrado)")
     inferidos = c.execute(
@@ -235,17 +235,33 @@ def pagina_cargas():
     if inferidos.empty:
         st.write("Nenhum.")
     else:
-        st.dataframe(inferidos, hide_index=True, use_container_width=True)
+        st.dataframe(inferidos, hide_index=True, width="stretch")
 
     st.divider()
-    st.subheader("Demonstração com dados sintéticos")
-    st.caption("Valida a mecânica (fluxo, fórmula, somatório). Não valida parâmetro. Tudo entra marcado como sintético.")
+    st.subheader("Cenário sintético (8 semanas)")
+    st.caption("Planta + CD de lácteos simulada: todos os layouts gerados de um único estado, então os números fecham "
+               "entre si. Valida a mecânica, não o parâmetro. Tudo entra marcado como sintético.")
     if st.button("Carregar cenário sintético", disabled=not usuario()):
-        from dados_sinteticos.gerar import sequencia_demo
-        for nome, df in sequencia_demo():
-            r = carga.registrar(c, nome, df, usuario=usuario(), fonte="UPLOAD", nome_arquivo=f"sintetico_{nome}",
-                                sintetico=True)
-            st.write(f"{nome}: {r.mensagem}")
+        from dados_sinteticos import simulacao
+        with st.spinner("Carregando 8 semanas e reconstruindo o modelo…"):
+            res = simulacao.carregar(c, usuario())
+        st.write(f"{sum(1 for _, r in res if r.status == 'ACEITA')} carga(s) aceita(s), "
+                 f"{sum(1 for _, r in res if r.status == 'DUPLICADA')} duplicada(s) (já carregadas antes).")
+
+    st.subheader("Apagar o histórico sintético")
+    from app import admin
+    n_cargas, n_linhas = admin.resumo_sinteticos(c)
+    st.caption(f"Há {n_cargas} carga(s) sintética(s) ({n_linhas} linhas). Cargas reais nunca são apagadas; "
+               "o expurgo fica registrado em bruto_expurgo.")
+    frase = st.text_input(f"Para confirmar, digite {admin.FRASE_CONFIRMACAO}", key="frase_expurgo")
+    if st.button("Apagar sintéticos", disabled=not (usuario() and n_cargas and frase == admin.FRASE_CONFIRMACAO)):
+        apagadas = admin.limpar_sinteticos(c, usuario())
+        st.success(f"Apagadas {apagadas[0]} carga(s) ({apagadas[1]} linhas). Modelo reconstruído.")
+
+
+def pagina_painel():
+    from app import painel
+    painel.pagina_painel(con)
 
 
 def pagina_layouts():
@@ -255,7 +271,7 @@ def pagina_layouts():
         situacao = "implementado" if spec.get("implementado") else "especificado (frentes 2/3)"
         with st.expander(f"{nome} — {spec['descricao']}  [{situacao}]"):
             st.write(f"Destino: `{spec['destino']}` · Canal: {', '.join(spec['canal'])} · Chave: {', '.join(spec['chave'])}")
-            st.dataframe(_tabela_campos(spec), hide_index=True, use_container_width=True)
+            st.dataframe(_tabela_campos(spec), hide_index=True, width="stretch")
             for r in spec.get("regras", []):
                 st.write(f"Regra: {r['msg']}")
 

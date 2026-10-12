@@ -5,7 +5,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 RAIZ = Path(__file__).resolve().parent.parent
-PAGINAS = ["pagina_upload", "pagina_contagem", "pagina_investigacao", "pagina_cargas", "pagina_layouts"]
+PAGINAS = ["pagina_painel", "pagina_upload", "pagina_contagem", "pagina_investigacao", "pagina_cargas", "pagina_layouts"]
 
 
 def _rodar(pagina: str) -> AppTest:
@@ -31,7 +31,7 @@ def test_demo_pela_tela_e_paginas_com_dados(banco_tmp):
     botao = next(b for b in at.button if b.label == "Carregar cenário sintético")
     at = botao.click().run()
     assert not at.exception, at.exception
-    assert any("Carga aceita" in m.value for m in at.markdown)
+    assert any("carga(s) aceita(s)" in m.value for m in at.markdown)
     for pagina in PAGINAS:
         assert not _rodar(pagina).exception, pagina
 
