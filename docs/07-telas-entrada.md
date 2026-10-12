@@ -11,7 +11,7 @@ Legenda: **[F]** fato · **[I]** inferência · **[E]** especulação · **[D]**
 
 | Camada | O que existe | Onde |
 |---|---|---|
-| Contrato de entrada | 21 layouts canônicos, todos derivados de um fato ou dimensão. **10 implementados** (cadastros + frente 1); 11 especificados (frentes 2 e 3) | `entrada/layouts.yaml` |
+| Contrato de entrada | 20 layouts canônicos, todos derivados de um fato ou dimensão. **11 implementados** (7 cadastros + 4 da frente 1); 9 especificados (frentes 2 e 3) | `entrada/layouts.yaml` |
 | Bruto imutável | `bruto_carga`, `bruto_linha` (append-only, origem, instante, usuário) | `sql/bruto.sql` |
 | Validação poka-yoke | tipo, faixa, lista fechada, referência a cadastro, regras entre campos, regras que dependem do cadastro | `app/validacao.py` |
 | Carga idempotente | hash de conteúdo, classificação NOVA / REPETIDA / CORRECAO, tudo ou nada | `app/carga.py` |
