@@ -30,10 +30,28 @@ DEPOIS DE INSTALAR
 - Informe seu nome no campo "Usuário", na barra lateral. Sem ele, nada é gravado.
 - Os dados ficam em  dados\gestao.duckdb  dentro da pasta da ferramenta.
   Para cópia de segurança, copie esse arquivo com a ferramenta fechada.
-- A ferramenta só abre no próprio computador (não fica acessível pela rede),
-  porque esta versão ainda não tem login.
+- A ferramenta só abre no próprio computador (não fica acessível pela rede).
+  Pela rede fica só o app do celular, que exige matrícula + PIN (abaixo).
 - Reinstalar não apaga os dados.
 - Passo a passo de uso: documento "Instruções de Trabalho" (IT-01 a IT-10).
+
+CELULAR (ANDROID) — COM OU SEM WI-FI
+------------------------------------
+O app do celular sobe junto com a ferramenta. Ele funciona no Wi-Fi da empresa e
+também sem rede: guarda as contagens no celular e envia quando o Wi-Fi volta.
+No computador, uma vez:
+  1. Abra a ferramenta. No Windows, se o Firewall perguntar, permita em "Redes privadas".
+  2. Crie o PIN de cada pessoa:  .venv\Scripts\python -m app.admin definir-pin --matricula M001
+     (Mac/Linux:  .venv/bin/python -m app.admin definir-pin --matricula M001)
+  3. Veja o endereço na janela "Celular" (ex.: http://192.168.0.10:8080).
+     Recomendado: peça à TI para fixar o IP deste computador no roteador.
+Em cada celular, uma vez (no Wi-Fi da empresa):
+  1. No Chrome, abra http://IP:8080 e toque em "Baixar o certificado".
+  2. Configurações > Segurança > Instalar certificado > Certificado de CA > ca.crt
+  3. Abra https://IP:8443, entre com matrícula e PIN.
+  4. Menu do Chrome > "Instalar app". Depois, abra pelo ícone "Coleta".
+Os envios do celular só são gravados com a ferramenta ABERTA no computador.
+Detalhes e limites: docs/09-celular.md
 
 PROBLEMAS COMUNS
 ----------------

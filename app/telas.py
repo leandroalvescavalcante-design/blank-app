@@ -19,6 +19,8 @@ from app.validacao import especificacao, ler_arquivo, modelo_csv
 def _conexao_base(caminho: str):
     con = conectar(caminho)
     carga.garantir_modelo(con)
+    from app.movel import integracao
+    integracao.iniciar_vigia(con)  # celular: processa a fila e publica as referências enquanto a ferramenta está aberta
     return con
 
 
@@ -220,6 +222,19 @@ def pagina_cargas():
     if not recusadas.empty:
         cid = st.selectbox("Ver erros da carga recusada", recusadas["carga_id"].tolist())
         st.dataframe(consultas.erros_da_carga(c, int(cid)), hide_index=True, width="stretch")
+
+    st.subheader("Celular")
+    from app.movel import caminhos as cam_movel, integracao
+    n_fila = len(list(cam_movel.fila().glob("*.json")))
+    st.caption(f"{n_fila} envio(s) do celular aguardando. A fila é processada sozinha a cada 15 s enquanto a ferramenta "
+               "está aberta; o botão força agora.")
+    if st.button("Processar fila do celular"):
+        res = integracao.processar_fila(c)
+        if res:
+            st.dataframe(pd.DataFrame(res), hide_index=True, width="stretch")
+        else:
+            st.write("Nada na fila. Referências do celular atualizadas.")
+            integracao.exportar_referencias(c)
 
     st.subheader("Reconciliação saldo × movimentos (K04)")
     st.caption("Mede a integridade da CARGA contra o ERP — não mede acuracidade física (isso é a contagem).")

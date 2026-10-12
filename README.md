@@ -17,6 +17,7 @@ sintético incluído valida só a mecânica.
 | 6 — Camada semântica | [docs/06-camada-semantica.md](docs/06-camada-semantica.md) · [semantica/metricas.yaml](semantica/metricas.yaml) |
 | 7 — Telas de entrada | [docs/07-telas-entrada.md](docs/07-telas-entrada.md) · [entrada/layouts.yaml](entrada/layouts.yaml) |
 | 8 — Painel e fechamento | [docs/08-painel-e-fechamento.md](docs/08-painel-e-fechamento.md) — inclui como trocar o fictício pelo real |
+| Celular (Android, com e sem Wi-Fi) | [docs/09-celular.md](docs/09-celular.md) |
 
 ## Instalar (equipe)
 
@@ -31,7 +32,9 @@ cria o atalho e oferece carregar o cenário de treinamento.
 pip install -r requirements-dev.txt
 python -m app.admin carregar-simulacao --usuario SEU_NOME     # cenário sintético de 8 semanas (opcional)
 streamlit run streamlit_app.py
-python -m pytest tests                                         # 64 testes de mecânica
+python -m app.movel.servidor                                   # app do celular (HTTPS 8443; certificado em http 8080)
+python -m app.admin definir-pin --matricula M001               # PIN de quem usa o celular
+python -m pytest tests                                         # 78 testes de mecânica
 python semantica/validar.py                                    # consistência da camada semântica
 python -m app.admin limpar-sinteticos --usuario SEU_NOME --confirmar   # antes de carregar dado real
 ```
