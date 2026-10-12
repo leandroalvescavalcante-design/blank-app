@@ -1,0 +1,45 @@
+FERRAMENTA DE GESTÃO INDUSTRIAL — INSTALAÇÃO
+=============================================
+
+Precisa de: computador com Windows 10/11, Mac ou Linux; internet durante a instalação.
+A instalação leva de 5 a 10 minutos e é feita uma vez por computador.
+
+WINDOWS
+-------
+1. Descompacte o arquivo ZIP numa pasta fixa, por exemplo C:\GestaoIndustrial
+   (não rode de dentro do ZIP nem da pasta Downloads, que costuma ser limpa).
+2. Abra a pasta "instalador" e dê dois cliques em  instalar_windows.bat
+   - Se o Windows mostrar "O Windows protegeu o computador", clique em
+     "Mais informações" e depois em "Executar assim mesmo".
+   - Se o Python não estiver instalado, o instalador instala o Python 3.12
+     sozinho e pede para você FECHAR a janela e rodar o instalador DE NOVO.
+3. No fim, ele pergunta se quer carregar o cenário de TREINAMENTO (dados fictícios).
+   Responda S para treinar; N para começar vazio.
+4. Para abrir a ferramenta: dois cliques no atalho "Gestao Industrial" na área de trabalho.
+   O navegador abre em http://localhost:8501. Não feche a janela preta enquanto usa.
+
+MAC E LINUX
+-----------
+1. Descompacte o ZIP numa pasta fixa.
+2. Abra o Terminal nessa pasta e rode:   bash instalador/instalar_mac_linux.sh
+   (sem Python 3.11 ou mais novo, ele explica como instalar e para.)
+3. Para abrir:   bash instalador/iniciar_mac_linux.sh
+
+DEPOIS DE INSTALAR
+------------------
+- Informe seu nome no campo "Usuário", na barra lateral. Sem ele, nada é gravado.
+- Os dados ficam em  dados\gestao.duckdb  dentro da pasta da ferramenta.
+  Para cópia de segurança, copie esse arquivo com a ferramenta fechada.
+- A ferramenta só abre no próprio computador (não fica acessível pela rede),
+  porque esta versão ainda não tem login.
+- Reinstalar não apaga os dados.
+- Passo a passo de uso: documento "Instruções de Trabalho" (IT-01 a IT-10).
+
+PROBLEMAS COMUNS
+----------------
+- "Python não encontrado" mesmo depois de instalar: feche a janela e rode de novo;
+  se persistir, reinstale o Python em https://www.python.org/downloads/ marcando
+  "Add python.exe to PATH".
+- A instalação parou nas bibliotecas: verifique a internet (proxy da empresa pode
+  bloquear o download) e rode o instalador de novo; ele continua de onde parou.
+- O navegador não abriu: digite http://localhost:8501 com a janela da ferramenta aberta.

@@ -18,7 +18,14 @@ sintético incluído valida só a mecânica.
 | 7 — Telas de entrada | [docs/07-telas-entrada.md](docs/07-telas-entrada.md) · [entrada/layouts.yaml](entrada/layouts.yaml) |
 | 8 — Painel e fechamento | [docs/08-painel-e-fechamento.md](docs/08-painel-e-fechamento.md) — inclui como trocar o fictício pelo real |
 
-## Rodar
+## Instalar (equipe)
+
+Baixe o pacote ZIP, descompacte numa pasta fixa e siga o [LEIA-ME_INSTALACAO.txt](LEIA-ME_INSTALACAO.txt):
+no Windows, dois cliques em `instalador/instalar_windows.bat`; no Mac/Linux, `bash instalador/instalar_mac_linux.sh`.
+O instalador verifica o Python (no Windows, instala se faltar), cria o ambiente, instala as bibliotecas,
+cria o atalho e oferece carregar o cenário de treinamento.
+
+## Rodar (desenvolvimento)
 
 ```
 pip install -r requirements-dev.txt
