@@ -1,0 +1,406 @@
+# Layouts canônicos de entrada — derivados das tabelas fato (Etapa 5).
+# Uma entrada = um layout. Upload (CSV ';' ou ',', ou XLSX) e formulários usam a mesma validação.
+#
+# Tipos de campo: texto | inteiro | decimal | data (AAAA-MM-DD) | instante (AAAA-MM-DD HH:MM[:SS]) | hora (HH:MM) | sim_nao (S/N)
+# Atributos: obrigatorio, min, max, max_len, lista (lista fechada abaixo), ref (cadastro de referência)
+#   ref.ausente: rejeitar  → código fora do cadastro recusa a linha (poka-yoke)
+#                inferir   → cria membro inferido (Etapa 4, regra 4); usado em extrações de ERP
+# regras: expressões sobre a linha já tipada; vazio(x) testa ausência.
+# implementado: false → layout especificado, carga para o fato ainda não construída (fora das 3 frentes ativas).
+# politica: tudo_ou_nada → uma linha inválida recusa o arquivo inteiro (nada chega ao fato; o bruto guarda tudo).
+
+listas:
+  sim_nao: [S, N]
+  tipo_local: [PICKING, PULMAO, DOCA, QUARENTENA, EXPEDICAO, PRODUCAO, DEPOSITO]
+  classe_temperatura: [SECO, REFRIGERADO, CONGELADO]
+  tipo_sku: [MP, PA, EMBALAGEM, REVENDA]
+  unidade: [UN, CX, FD, PL, KG, L, M3]
+  funcao: [INVENTARIANTE, CONFERENTE, SEPARADOR, OPERADOR, MOTORISTA, SUPERVISOR, ANALISTA]
+  processo_motivo: [RECEBIMENTO, DIVERGENCIA, AJUSTE, BAIXA, CORTE, PARADA, REFUGO, DEVOLUCAO, ENTREGA_FRUSTRADA]
+  etapa_origem: [RECEBIMENTO, ENDERECAMENTO, SEPARACAO, CONFERENCIA, DESCONHECIDA, NAO_SE_APLICA]
+  categoria_perda: [VENCIMENTO, AVARIA, AJUSTE, OUTRO, NAO_SE_APLICA]
+  documento_tipo: [RECEBIMENTO, OP, SEPARACAO, NF_SAIDA, NF_ENTRADA, CONTAGEM, TRANSFERENCIA, AJUSTE, OUTRO]
+
+# dim_tipo_movimento (Etapa 5, ajuste 1). Lista fechada; sinal = sinal esperado da quantidade.
+tipos_movimento:
+  ENTRADA_RECEBIMENTO:   {sinal: 1,  afeta_disponivel: true}
+  ENTRADA_PRODUCAO:      {sinal: 1,  afeta_disponivel: true}
+  ENTRADA_DEVOLUCAO:     {sinal: 1,  afeta_disponivel: true}
+  SAIDA_EXPEDICAO:       {sinal: -1, afeta_disponivel: true}
+  SAIDA_CONSUMO:         {sinal: -1, afeta_disponivel: true}
+  TRANSFERENCIA_SAIDA:   {sinal: -1, afeta_disponivel: true}
+  TRANSFERENCIA_ENTRADA: {sinal: 1,  afeta_disponivel: true}
+  AJUSTE_POSITIVO:       {sinal: 1,  afeta_disponivel: true}
+  AJUSTE_NEGATIVO:       {sinal: -1, afeta_disponivel: true}
+  BAIXA:                 {sinal: -1, afeta_disponivel: true}
+
+# Motivos padrão do produto. O tenant sobrescreve pelo cadastro (mesmo código) ou acrescenta.
+# Não existe "OUTRO" com texto livre (Etapa 4): o que a lista não cobre vai para DESCONHECIDO.
+motivos_padrao:
+  - {codigo: DESCONHECIDO,     descricao: Origem não identificada,             processo: DIVERGENCIA, etapa_origem: DESCONHECIDA,  gera_baixa: N, categoria_perda: AJUSTE,        controlavel: N}
+  - {codigo: DIV_RECEBIMENTO,  descricao: Erro de recebimento/conferência de entrada, processo: DIVERGENCIA, etapa_origem: RECEBIMENTO, gera_baixa: N, categoria_perda: AJUSTE, controlavel: S}
+  - {codigo: DIV_ENDERECAMENTO, descricao: Produto armazenado em endereço errado, processo: DIVERGENCIA, etapa_origem: ENDERECAMENTO, gera_baixa: N, categoria_perda: AJUSTE,       controlavel: S}
+  - {codigo: DIV_SEPARACAO,    descricao: Separação de item/quantidade errada,  processo: DIVERGENCIA, etapa_origem: SEPARACAO,     gera_baixa: N, categoria_perda: AJUSTE,        controlavel: S}
+  - {codigo: DIV_CONFERENCIA,  descricao: Erro não detectado na conferência,    processo: DIVERGENCIA, etapa_origem: CONFERENCIA,   gera_baixa: N, categoria_perda: AJUSTE,        controlavel: S}
+  - {codigo: BAIXA_VENCIMENTO, descricao: Descarte por vencimento,              processo: BAIXA,       etapa_origem: NAO_SE_APLICA, gera_baixa: S, categoria_perda: VENCIMENTO,    controlavel: S}
+  - {codigo: BAIXA_AVARIA,     descricao: Descarte por avaria,                  processo: BAIXA,       etapa_origem: NAO_SE_APLICA, gera_baixa: S, categoria_perda: AVARIA,        controlavel: S}
+
+layouts:
+
+  # ------------------------------------------------------------------ cadastros
+  cad_site:
+    descricao: Site (planta ou CD) com fuso e horário de corte do dia operacional
+    canal: [upload]
+    destino: dim_site
+    implementado: true
+    chave: [site]
+    campos:
+      site:          {tipo: texto, obrigatorio: true, max_len: 20}
+      descricao:     {tipo: texto, obrigatorio: true, max_len: 80}
+      horario_corte: {tipo: hora, obrigatorio: true}
+
+  cad_local:
+    descricao: Endereço de armazenagem (ou depósito, se o ERP não tiver endereço)
+    canal: [upload]
+    destino: dim_local
+    implementado: true
+    chave: [endereco]
+    campos:
+      endereco:           {tipo: texto, obrigatorio: true, max_len: 30}
+      site:               {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
+      zona:               {tipo: texto, obrigatorio: true, max_len: 20}
+      tipo:               {tipo: texto, obrigatorio: true, lista: tipo_local}
+      classe_temperatura: {tipo: texto, obrigatorio: true, lista: classe_temperatura}
+
+  cad_sku:
+    descricao: SKU com unidade base, vida útil, peso e volume
+    canal: [upload]
+    destino: dim_sku
+    implementado: true
+    chave: [sku]
+    campos:
+      sku:                         {tipo: texto, obrigatorio: true, max_len: 30}
+      descricao:                   {tipo: texto, obrigatorio: true, max_len: 120}
+      tipo:                        {tipo: texto, obrigatorio: true, lista: tipo_sku}
+      familia:                     {tipo: texto, obrigatorio: true, max_len: 30}
+      unidade_base:                {tipo: texto, obrigatorio: true, lista: unidade}
+      controla_lote:               {tipo: sim_nao, obrigatorio: true}
+      shelf_life_dias:             {tipo: inteiro, obrigatorio: false, min: 1, max: 3650}
+      validade_minima_padrao_dias: {tipo: inteiro, obrigatorio: false, min: 0, max: 3650}
+      classe_temperatura:          {tipo: texto, obrigatorio: true, lista: classe_temperatura}
+      peso_bruto_kg_un_base:       {tipo: decimal, obrigatorio: true, min: 0.000001, max: 5000}
+      volume_m3_un_base:           {tipo: decimal, obrigatorio: true, min: 0.0000001, max: 50}
+      codigo_barras:               {tipo: texto, obrigatorio: false, max_len: 30}
+    regras:
+      - {expr: "vazio(validade_minima_padrao_dias) or vazio(shelf_life_dias) or validade_minima_padrao_dias < shelf_life_dias", msg: "validade mínima deve ser menor que o shelf life"}
+      - {expr: "controla_lote == 'S' or vazio(shelf_life_dias)", msg: "SKU com shelf life precisa controlar lote"}
+
+  cad_sku_unidade:
+    descricao: Fator de conversão de unidade (un, caixa, fardo, palete, kg) para a unidade base
+    canal: [upload]
+    destino: sku_unidade
+    implementado: true
+    chave: [sku, unidade]
+    campos:
+      sku:              {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: rejeitar}}
+      unidade:          {tipo: texto, obrigatorio: true, lista: unidade}
+      fator_para_base:  {tipo: decimal, obrigatorio: true, min: 0.000001, max: 1000000}
+      e_unidade_palete: {tipo: sim_nao, obrigatorio: true}
+
+  cad_lote:
+    descricao: Lote com fabricação e validade (opcional — lotes também nascem dos movimentos e do saldo)
+    canal: [upload]
+    destino: dim_lote
+    implementado: true
+    chave: [sku, lote]
+    campos:
+      sku:             {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: rejeitar}}
+      lote:            {tipo: texto, obrigatorio: true, max_len: 30}
+      data_fabricacao: {tipo: data, obrigatorio: false}
+      data_validade:   {tipo: data, obrigatorio: true}
+    regras:
+      - {expr: "vazio(data_fabricacao) or data_validade > data_fabricacao", msg: "validade deve ser posterior à fabricação"}
+
+  cad_motivo:
+    descricao: Motivo (lista fechada por processo); sobrescreve os motivos padrão de mesmo código
+    canal: [upload]
+    destino: dim_motivo
+    implementado: true
+    chave: [codigo]
+    campos:
+      codigo:          {tipo: texto, obrigatorio: true, max_len: 30}
+      descricao:       {tipo: texto, obrigatorio: true, max_len: 120}
+      processo:        {tipo: texto, obrigatorio: true, lista: processo_motivo}
+      etapa_origem:    {tipo: texto, obrigatorio: true, lista: etapa_origem}
+      gera_baixa:      {tipo: sim_nao, obrigatorio: true}
+      categoria_perda: {tipo: texto, obrigatorio: true, lista: categoria_perda}
+      controlavel:     {tipo: sim_nao, obrigatorio: true}
+
+  cad_colaborador:
+    descricao: Colaborador (sem CPF e sem nome na camada analítica — LGPD)
+    canal: [upload]
+    destino: dim_colaborador
+    implementado: true
+    chave: [matricula]
+    campos:
+      matricula: {tipo: texto, obrigatorio: true, max_len: 20}
+      funcao:    {tipo: texto, obrigatorio: true, lista: funcao}
+      turno:     {tipo: texto, obrigatorio: true, max_len: 10}
+      site:      {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
+
+  # ---------------------------------------------------- frente 1 (implementada)
+  saldo_estoque:
+    descricao: Fotografia de saldo de UM site num dia, extraída do ERP (substitui por inteiro a fotografia anterior do mesmo site e dia)
+    canal: [upload]
+    destino: fato_saldo_diario
+    implementado: true
+    snapshot: {por: [site, data_saldo]}
+    chave: [sku, lote, endereco, data_saldo]
+    campos:
+      site:              {tipo: texto, obrigatorio: true, ref: {cadastro: cad_site, ausente: rejeitar}}
+      data_saldo:        {tipo: data, obrigatorio: true}
+      instante_extracao: {tipo: instante, obrigatorio: true}
+      sku:               {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: inferir}}
+      lote:              {tipo: texto, obrigatorio: false, max_len: 30}
+      data_validade:     {tipo: data, obrigatorio: false}
+      endereco:          {tipo: texto, obrigatorio: true, ref: {cadastro: cad_local, ausente: inferir}}
+      qtd_fisica:        {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_bloqueada:     {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_reservada:     {tipo: decimal, obrigatorio: true, min: 0}
+      custo_unit_medio:  {tipo: decimal, obrigatorio: true, min: 0}
+    regras:
+      - {expr: "qtd_bloqueada + qtd_reservada <= qtd_fisica", msg: "bloqueado + reservado não pode exceder o físico"}
+      - {expr: "instante_extracao.date() >= data_saldo", msg: "extração anterior à data do saldo"}
+
+  mov_estoque:
+    descricao: Movimentos de estoque (todos os SKUs do período), com data do movimento E instante do lançamento
+    canal: [upload]
+    destino: fato_movimento_estoque
+    implementado: true
+    chave: [documento_tipo, documento_numero, item, sequencia, tipo_movimento]
+    campos:
+      documento_tipo:      {tipo: texto, obrigatorio: true, lista: documento_tipo}
+      documento_numero:    {tipo: texto, obrigatorio: true, max_len: 40}
+      item:                {tipo: inteiro, obrigatorio: true, min: 1}
+      sequencia:           {tipo: inteiro, obrigatorio: true, min: 1}
+      tipo_movimento:      {tipo: texto, obrigatorio: true, lista: tipos_movimento}
+      sku:                 {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: inferir}}
+      lote:                {tipo: texto, obrigatorio: false, max_len: 30}
+      data_validade:       {tipo: data, obrigatorio: false}
+      endereco:            {tipo: texto, obrigatorio: true, ref: {cadastro: cad_local, ausente: inferir}}
+      qtd:                 {tipo: decimal, obrigatorio: true}
+      custo_unit:          {tipo: decimal, obrigatorio: true, min: 0}
+      data_movimento:      {tipo: data, obrigatorio: true}
+      instante_lancamento: {tipo: instante, obrigatorio: true}
+      motivo:              {tipo: texto, obrigatorio: false, ref: {cadastro: cad_motivo, ausente: rejeitar}}
+    regras:
+      - {expr: "qtd != 0", msg: "quantidade zero não é movimento"}
+      - {expr: "qtd * sinal_tipo(tipo_movimento) > 0", msg: "sinal da quantidade incoerente com o tipo de movimento"}
+      - {expr: "instante_lancamento.date() >= data_movimento", msg: "lançamento anterior à data do movimento"}
+
+  contagem:
+    descricao: Contagem cega de uma posição (formulário ou upload de coletor/WMS). Recontagem final é derivada, não digitada.
+    canal: [formulario, upload]
+    destino: fato_contagem
+    implementado: true
+    chave: [numero_contagem, endereco, sku, lote, numero_recontagem]
+    campos:
+      numero_contagem:       {tipo: texto, obrigatorio: true, max_len: 40}
+      numero_recontagem:     {tipo: inteiro, obrigatorio: true, min: 0, max: 9}
+      endereco:              {tipo: texto, obrigatorio: true, ref: {cadastro: cad_local, ausente: rejeitar}}
+      sku:                   {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: rejeitar}}
+      lote:                  {tipo: texto, obrigatorio: false, max_len: 30}
+      qtd_contada:           {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_sistema_congelada: {tipo: decimal, obrigatorio: true, min: 0}
+      instante_congelamento: {tipo: instante, obrigatorio: true}
+      instante_contagem:     {tipo: instante, obrigatorio: true}
+      matricula:             {tipo: texto, obrigatorio: true, ref: {cadastro: cad_colaborador, ausente: rejeitar}}
+    regras:
+      - {expr: "instante_contagem >= instante_congelamento", msg: "contagem anterior ao congelamento do saldo"}
+
+  investigacao_divergencia:
+    descricao: Resultado da investigação de uma divergência final de contagem (atribui a etapa de origem ao ajuste)
+    canal: [formulario]
+    destino: aux_investigacao
+    implementado: true
+    chave: [numero_contagem, endereco, sku, lote]
+    campos:
+      numero_contagem: {tipo: texto, obrigatorio: true, max_len: 40}
+      endereco:        {tipo: texto, obrigatorio: true, ref: {cadastro: cad_local, ausente: rejeitar}}
+      sku:             {tipo: texto, obrigatorio: true, ref: {cadastro: cad_sku, ausente: rejeitar}}
+      lote:            {tipo: texto, obrigatorio: false, max_len: 30}
+      motivo:          {tipo: texto, obrigatorio: true, ref: {cadastro: cad_motivo, ausente: rejeitar}}
+      matricula:       {tipo: texto, obrigatorio: true, ref: {cadastro: cad_colaborador, ausente: rejeitar}}
+
+  # ------------------------------------------- frentes 2 e 3 (especificadas)
+  recebimento:
+    descricao: Linha de recebimento conferida (F01)
+    canal: [upload, formulario]
+    destino: fato_recebimento
+    implementado: false
+    chave: [numero_recebimento, item, lote]
+    campos:
+      numero_recebimento:   {tipo: texto, obrigatorio: true}
+      item:                 {tipo: inteiro, obrigatorio: true, min: 1}
+      numero_pc:            {tipo: texto, obrigatorio: false}
+      item_pc:              {tipo: inteiro, obrigatorio: false}
+      chave_nf_entrada:     {tipo: texto, obrigatorio: false, max_len: 44}
+      fornecedor_cnpj:      {tipo: texto, obrigatorio: true}
+      sku:                  {tipo: texto, obrigatorio: true}
+      lote:                 {tipo: texto, obrigatorio: false}
+      data_validade:        {tipo: data, obrigatorio: false}
+      endereco:             {tipo: texto, obrigatorio: true}
+      qtd_esperada:         {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_recebida:         {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_recusada:         {tipo: decimal, obrigatorio: true, min: 0}
+      motivo:               {tipo: texto, obrigatorio: false}
+      matricula_conferente: {tipo: texto, obrigatorio: true}
+      instante_conferencia: {tipo: instante, obrigatorio: true}
+
+  pedido_compra_evento:
+    descricao: Evento de linha de pedido de compra (emissão, alteração de data/quantidade, cancelamento) → F05
+    canal: [upload]
+    destino: fato_pedido_compra_linha
+    implementado: false
+    chave: [numero_pc, item, numero_evento]
+    campos:
+      numero_pc:       {tipo: texto, obrigatorio: true}
+      item:            {tipo: inteiro, obrigatorio: true, min: 1}
+      numero_evento:   {tipo: inteiro, obrigatorio: true, min: 1}
+      tipo_evento:     {tipo: texto, obrigatorio: true}
+      fornecedor_cnpj: {tipo: texto, obrigatorio: true}
+      sku:             {tipo: texto, obrigatorio: true}
+      endereco:        {tipo: texto, obrigatorio: true}
+      delta_qtd:       {tipo: decimal, obrigatorio: true}
+      data_prevista:   {tipo: data, obrigatorio: true}
+      instante_evento: {tipo: instante, obrigatorio: true}
+      motivo:          {tipo: texto, obrigatorio: false}
+
+  programacao_op:
+    descricao: OP alocada a recurso e turno numa versão do programa (F06a)
+    canal: [upload]
+    destino: fato_programacao_op
+    implementado: false
+    chave: [numero_op, recurso, data, turno, versao]
+    campos:
+      numero_op:          {tipo: texto, obrigatorio: true}
+      versao:             {tipo: inteiro, obrigatorio: true, min: 1}
+      congelada:          {tipo: sim_nao, obrigatorio: true}
+      data:               {tipo: data, obrigatorio: true}
+      turno:              {tipo: texto, obrigatorio: true}
+      recurso:            {tipo: texto, obrigatorio: true}
+      sku:                {tipo: texto, obrigatorio: true}
+      sequencia:          {tipo: inteiro, obrigatorio: true, min: 1}
+      qtd_programada:     {tipo: decimal, obrigatorio: true, min: 0}
+      tempo_padrao_min_un: {tipo: decimal, obrigatorio: true, min: 0}
+      setup_min:          {tipo: decimal, obrigatorio: true, min: 0}
+
+  apontamento:
+    descricao: Apontamento de produção (F06b)
+    canal: [formulario, upload]
+    destino: fato_apontamento
+    implementado: false
+    chave: [numero_op, recurso, numero_apontamento]
+    campos:
+      numero_op:            {tipo: texto, obrigatorio: true}
+      numero_apontamento:   {tipo: inteiro, obrigatorio: true, min: 1}
+      recurso:              {tipo: texto, obrigatorio: true}
+      turno:                {tipo: texto, obrigatorio: true}
+      sku:                  {tipo: texto, obrigatorio: true}
+      lote:                 {tipo: texto, obrigatorio: false}
+      qtd_boa:              {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_refugo:           {tipo: decimal, obrigatorio: true, min: 0}
+      motivo_refugo:        {tipo: texto, obrigatorio: false}
+      instante_apontamento: {tipo: instante, obrigatorio: true}
+
+  pedido_venda_evento:
+    descricao: Evento do CLIENTE sobre linha de pedido de venda (F07) — corte próprio não entra aqui
+    canal: [upload]
+    destino: fato_evento_pedido_venda
+    implementado: false
+    chave: [numero_pedido, item, numero_evento]
+    campos:
+      numero_pedido:   {tipo: texto, obrigatorio: true}
+      item:            {tipo: inteiro, obrigatorio: true, min: 1}
+      numero_evento:   {tipo: inteiro, obrigatorio: true, min: 1}
+      tipo_evento:     {tipo: texto, obrigatorio: true}
+      cliente:         {tipo: texto, obrigatorio: true}
+      sku:             {tipo: texto, obrigatorio: true}
+      site:            {tipo: texto, obrigatorio: true}
+      delta_qtd:       {tipo: decimal, obrigatorio: true}
+      data_desejada:   {tipo: data, obrigatorio: true}
+      instante_evento: {tipo: instante, obrigatorio: true}
+      motivo:          {tipo: texto, obrigatorio: false}
+
+  separacao:
+    descricao: Tarefa de separação e conferência (F08)
+    canal: [upload, formulario]
+    destino: fato_separacao
+    implementado: false
+    chave: [numero_tarefa]
+    campos:
+      numero_tarefa:          {tipo: texto, obrigatorio: true}
+      numero_pedido:          {tipo: texto, obrigatorio: true}
+      item:                   {tipo: inteiro, obrigatorio: true}
+      remessa:                {tipo: texto, obrigatorio: true}
+      sku:                    {tipo: texto, obrigatorio: true}
+      lote:                   {tipo: texto, obrigatorio: false}
+      endereco:               {tipo: texto, obrigatorio: true}
+      qtd_solicitada:         {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_separada:           {tipo: decimal, obrigatorio: true, min: 0}
+      qtd_conferida:          {tipo: decimal, obrigatorio: true, min: 0}
+      matricula_separador:    {tipo: texto, obrigatorio: true}
+      matricula_conferente:   {tipo: texto, obrigatorio: true}
+      instante_separacao:     {tipo: instante, obrigatorio: true}
+      instante_conferencia:   {tipo: instante, obrigatorio: true}
+      motivo:                 {tipo: texto, obrigatorio: false}
+
+  faturamento:
+    descricao: Item de NF de saída ligado a linha de pedido × remessa (F09)
+    canal: [upload]
+    destino: fato_faturamento
+    implementado: false
+    chave: [chave_nf, item_nf]
+    campos:
+      chave_nf:         {tipo: texto, obrigatorio: true, max_len: 44}
+      item_nf:          {tipo: inteiro, obrigatorio: true, min: 1}
+      numero_pedido:    {tipo: texto, obrigatorio: true}
+      item_pedido:      {tipo: inteiro, obrigatorio: true}
+      remessa:          {tipo: texto, obrigatorio: true}
+      cliente:          {tipo: texto, obrigatorio: true}
+      sku:              {tipo: texto, obrigatorio: true}
+      qtd:              {tipo: decimal, obrigatorio: true}
+      valor_mercadoria: {tipo: decimal, obrigatorio: true}
+      instante_emissao: {tipo: instante, obrigatorio: true}
+
+  viagem:
+    descricao: Viagem de veículo (F10a)
+    canal: [upload, formulario]
+    destino: fato_viagem
+    implementado: false
+    chave: [numero_viagem]
+    campos:
+      numero_viagem:      {tipo: texto, obrigatorio: true}
+      placa:              {tipo: texto, obrigatorio: true}
+      matricula_motorista: {tipo: texto, obrigatorio: true}
+      transportadora_cnpj: {tipo: texto, obrigatorio: false}
+      site:               {tipo: texto, obrigatorio: true}
+      custo_viagem:       {tipo: decimal, obrigatorio: true, min: 0}
+      instante_saida:     {tipo: instante, obrigatorio: true}
+      instante_retorno:   {tipo: instante, obrigatorio: false}
+
+  entrega:
+    descricao: Tentativa de entrega de uma remessa (F10b)
+    canal: [formulario, upload]
+    destino: fato_entrega
+    implementado: false
+    chave: [numero_viagem, remessa, numero_tentativa]
+    campos:
+      numero_viagem:      {tipo: texto, obrigatorio: true}
+      remessa:            {tipo: texto, obrigatorio: true}
+      numero_tentativa:   {tipo: inteiro, obrigatorio: true, min: 1}
+      cliente:            {tipo: texto, obrigatorio: true}
+      status:             {tipo: texto, obrigatorio: true}
+      motivo:             {tipo: texto, obrigatorio: false}
+      instante_chegada:   {tipo: instante, obrigatorio: true}
+      instante_conclusao: {tipo: instante, obrigatorio: true}
